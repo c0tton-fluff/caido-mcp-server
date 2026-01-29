@@ -1,0 +1,10 @@
+# Binaries
+caido-mcp-server
+*.exe
+
+# IDE
+.idea/
+.vscode/
+
+# Token
+~/.caido-mcp/

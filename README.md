@@ -1,60 +1,56 @@
 # caido-mcp-server
 
-A Model Context Protocol (MCP) server that provides comprehensive access to [Caido](https://caido.io/) proxy features. This allows LLM-based tools like Claude Code to browse, analyze, and interact with HTTP requests captured by Caido.
+[![Go](https://img.shields.io/badge/Go-1.21+-00ADD8?logo=go&logoColor=white)](https://go.dev)
+[![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Release](https://img.shields.io/github/v/release/c0tton-fluff/caido-mcp-server)](https://github.com/c0tton-fluff/caido-mcp-server/releases)
+
+MCP server for [Caido](https://caido.io/) proxy integration. Enables AI assistants like Claude Code to browse, analyze, and interact with HTTP traffic.
 
 ## Features
 
-- **List & get requests** with HTTPQL filtering and field selection
-- **Send requests** via Replay functionality
-- **Replay sessions** - list, get entries, send custom requests
-- **Automate sessions** - access fuzzing results and payloads
-- **Findings** - list and create security findings
-- **Sitemap** - browse discovered endpoints hierarchically
-- **Scopes** - manage target scopes
-- **OAuth authentication** with automatic token refresh
+- **Proxy history** — List and search requests with HTTPQL filtering
+- **Replay** — Send HTTP requests, manage sessions
+- **Automate** — Access fuzzing results and payloads
+- **Findings** — Create and list security findings
+- **Sitemap** — Browse discovered endpoints
+- **Scopes** — Manage target definitions
+- **OAuth** — Automatic token refresh
 
 ## Installation
-
-### Quick install (recommended)
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/c0tton-fluff/caido-mcp-server/main/install.sh | bash
 ```
 
-### Download binary
+Or download from [Releases](https://github.com/c0tton-fluff/caido-mcp-server/releases).
 
-Download from [Releases](https://github.com/c0tton-fluff/caido-mcp-server/releases) and place in your PATH.
-
-### Build from source
+<details>
+<summary>Build from source</summary>
 
 ```bash
 git clone https://github.com/c0tton-fluff/caido-mcp-server.git
 cd caido-mcp-server
 go build -o caido-mcp-server .
 ```
+</details>
 
-## Usage
+## Quick Start
 
-### 1. Authenticate with Caido
+**1. Authenticate**
 
 ```bash
-env CAIDO_URL=http://localhost:8080 ./caido-mcp-server login
+CAIDO_URL=http://localhost:8080 caido-mcp-server login
 ```
 
-This will:
-1. Open a browser to the Caido authentication page
-2. Wait for you to complete authentication
-3. Save the token to `~/.caido-mcp/token.json`
+**2. Configure MCP client**
 
-### 2. Configure MCP Client
-
-Add to your `~/.mcp.json`:
+Add to `~/.mcp.json`:
 
 ```json
 {
   "mcpServers": {
     "caido": {
-      "command": "/path/to/caido-mcp-server",
+      "command": "caido-mcp-server",
       "args": ["serve"],
       "env": {
         "CAIDO_URL": "http://127.0.0.1:8080"
@@ -64,151 +60,109 @@ Add to your `~/.mcp.json`:
 }
 ```
 
-### 3. Use with Claude Code
+**3. Use with Claude Code**
 
-Once configured, you can ask Claude Code to:
+```
+"List all POST requests to /api"
+"Send this request with a modified user ID"
+"Create a finding for this IDOR"
+"Show fuzzing results from Automate session 1"
+```
 
-- "List all POST requests to the API"
-- "Send this request with modified parameters"
-- "Show me the sitemap for target.com"
-- "Create a finding for this IDOR vulnerability"
-- "What fuzzing payloads were tried in Automate session 1?"
+## Tools Reference
 
-## MCP Tools
+### Proxy
 
-### Proxy History
+| Tool | Description |
+|------|-------------|
+| `caido_list_requests` | List requests with HTTPQL filter, pagination |
+| `caido_get_request` | Get request details (headers, body, response) |
 
-#### caido_list_requests
-List proxied HTTP requests with optional HTTPQL filtering.
+### Replay
 
+| Tool | Description |
+|------|-------------|
+| `caido_send_request` | Send raw HTTP request |
+| `caido_list_replay_sessions` | List Replay sessions |
+| `caido_get_replay_entry` | Get Replay entry details |
+
+### Automate
+
+| Tool | Description |
+|------|-------------|
+| `caido_list_automate_sessions` | List fuzzing sessions |
+| `caido_get_automate_session` | Get session with entry list |
+| `caido_get_automate_entry` | Get fuzz results and payloads |
+
+### Findings & Scope
+
+| Tool | Description |
+|------|-------------|
+| `caido_list_findings` | List security findings |
+| `caido_create_finding` | Create finding for a request |
+| `caido_get_sitemap` | Browse sitemap hierarchy |
+| `caido_list_scopes` | List defined scopes |
+| `caido_create_scope` | Create new scope |
+
+<details>
+<summary>Full parameter reference</summary>
+
+### caido_list_requests
 | Parameter | Type | Description |
 |-----------|------|-------------|
 | `httpql` | string | HTTPQL filter query |
 | `limit` | int | Max requests (default 20, max 100) |
-| `after` | string | Cursor for pagination |
+| `after` | string | Pagination cursor |
 
-#### caido_get_request
-Get detailed information about HTTP request(s).
-
+### caido_get_request
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `ids` | string[] | Request IDs to retrieve |
-| `include` | string[] | Fields: `metadata`, `requestHeaders`, `requestBody`, `responseHeaders`, `responseBody` |
-| `bodyOffset` | int | Byte offset for body |
-| `bodyLimit` | int | Byte limit for body |
+| `ids` | string[] | Request IDs |
+| `include` | string[] | `requestHeaders`, `requestBody`, `responseHeaders`, `responseBody` |
+| `bodyOffset` | int | Byte offset |
+| `bodyLimit` | int | Byte limit |
 
-### Replay
-
-#### caido_list_replay_sessions
-List all Replay sessions.
-
-#### caido_get_replay_entry
-Get a Replay entry with request/response details.
-
+### caido_send_request
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `id` | string | Replay entry ID |
-
-#### caido_send_request
-Send an HTTP request via Replay.
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `raw` | string | Full HTTP request (headers + body) |
-| `host` | string | Target host (optional if in Host header) |
-| `port` | int | Target port (default: 443/80) |
+| `raw` | string | Full HTTP request |
+| `host` | string | Target host |
+| `port` | int | Target port |
 | `tls` | bool | Use HTTPS (default: true) |
-| `sessionId` | string | Replay session ID (default: "1") |
+| `sessionId` | string | Replay session ID |
 
-### Automate (Fuzzing)
-
-#### caido_list_automate_sessions
-List all Automate fuzzing sessions.
-
-#### caido_get_automate_session
-Get Automate session with entry list.
-
+### caido_get_automate_entry
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `id` | string | Automate session ID |
+| `id` | string | Entry ID |
+| `limit` | int | Max results |
+| `after` | string | Pagination cursor |
 
-#### caido_get_automate_entry
-Get Automate entry with fuzz results.
-
+### caido_create_finding
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `id` | string | Automate entry ID |
-| `first` | int | Max results (default 10) |
-| `after` | string | Cursor for pagination |
-
-### Findings
-
-#### caido_list_findings
-List security findings.
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `limit` | int | Max findings |
-| `after` | string | Cursor for pagination |
-| `filter` | string | HTTPQL filter |
-
-#### caido_create_finding
-Create a new finding.
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `requestId` | string | Associated request ID |
+| `requestId` | string | Associated request |
 | `title` | string | Finding title |
 | `description` | string | Finding description |
 
-### Sitemap
-
-#### caido_get_sitemap
-Get sitemap entries (root or children).
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `parentId` | string | Parent entry ID (omit for root) |
-
-### Scopes
-
-#### caido_list_scopes
-List all defined scopes.
-
-#### caido_create_scope
-Create a new scope.
-
+### caido_create_scope
 | Parameter | Type | Description |
 |-----------|------|-------------|
 | `name` | string | Scope name |
-| `allowlist` | string[] | Allowed URL patterns |
-| `denylist` | string[] | Denied URL patterns |
+| `allowlist` | string[] | URL patterns to include |
+| `denylist` | string[] | URL patterns to exclude |
 
-## Environment Variables
-
-| Variable | Description |
-|----------|-------------|
-| `CAIDO_URL` | Caido instance URL (e.g., `http://127.0.0.1:8080`) |
+</details>
 
 ## Troubleshooting
 
-### GraphQL Errors
+| Error | Fix |
+|-------|-----|
+| `Invalid token` | Run `caido-mcp-server login` again |
+| `sessionId required` | Use `sessionId` not `replaySessionId` |
+| `depth required` | Add `depth: "DIRECT"` or `"ALL"` |
 
-If you see errors like `argument "X" is required but not provided`:
-
-1. Check MCP logs: `~/.cache/claude-cli-nodejs/*/mcp-logs-caido/`
-2. Verify parameter names match [Caido's GraphQL schema](https://github.com/caido/graphql-explorer)
-3. Rebuild after fixes: `go build -o caido-mcp-server .`
-4. Restart Claude Code to reload the MCP server
-
-### Common Issues
-
-| Error | Cause | Fix |
-|-------|-------|-----|
-| `sessionId required` | Parameter name mismatch | Use `sessionId` not `replaySessionId` |
-| `parentId required` | Parameter name mismatch | Use `parentId` not `id` for sitemap |
-| `depth required` | Missing enum param | Add `depth: "DIRECT"` or `"ALL"` |
-| `Invalid token` | Token expired | Run `./caido-mcp-server login` again |
+Check MCP logs: `~/.cache/claude-cli-nodejs/*/mcp-logs-caido/`
 
 ## License
 

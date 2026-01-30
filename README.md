@@ -15,7 +15,17 @@ A Model Context Protocol (MCP) server that provides comprehensive access to [Cai
 
 ## Installation
 
-Build from source:
+### Quick install (recommended)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/c0tton-fluff/caido-mcp-server/main/install.sh | bash
+```
+
+### Download binary
+
+Download from [Releases](https://github.com/c0tton-fluff/caido-mcp-server/releases) and place in your PATH.
+
+### Build from source
 
 ```bash
 git clone https://github.com/c0tton-fluff/caido-mcp-server.git

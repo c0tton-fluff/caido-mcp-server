@@ -102,10 +102,15 @@ func sendRequestHandler(client *caido.Client) func(context.Context, *mcp.CallToo
 			}
 		}
 
-		// Use default session or specified one
+		// Use specified session or create a new one
 		sessionID := input.SessionID
 		if sessionID == "" {
-			sessionID = "1" // Use first session by default
+			// Create a new replay session to avoid TaskInProgressUserError
+			session, err := client.CreateReplaySession(ctx)
+			if err != nil {
+				return nil, SendRequestOutput{}, fmt.Errorf("failed to create replay session: %w", err)
+			}
+			sessionID = session.ID
 		}
 
 		// Encode request as base64

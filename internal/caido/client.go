@@ -306,6 +306,38 @@ func (c *Client) GetReplayEntry(ctx context.Context, id string) (*ReplayEntry, e
 	return resp.ReplayEntry, nil
 }
 
+// CreateReplaySessionInput is the input for creating a replay session
+type CreateReplaySessionInput struct {
+	CollectionID *string `json:"collectionId,omitempty"`
+}
+
+// CreateReplaySessionResult is the response from creating a replay session
+type CreateReplaySessionResult struct {
+	CreateReplaySession struct {
+		Session *ReplaySession `json:"session"`
+		Error   *struct {
+			Typename string `json:"__typename"`
+		} `json:"error"`
+	} `json:"createReplaySession"`
+}
+
+// CreateReplaySession creates a new replay session
+func (c *Client) CreateReplaySession(ctx context.Context) (*ReplaySession, error) {
+	req := graphql.NewRequest(CreateReplaySessionMutation)
+	req.Var("input", CreateReplaySessionInput{})
+
+	var resp CreateReplaySessionResult
+	if err := c.doRequest(ctx, req, &resp); err != nil {
+		return nil, fmt.Errorf("failed to create replay session: %w", err)
+	}
+
+	if resp.CreateReplaySession.Error != nil {
+		return nil, fmt.Errorf("create replay session error: %s", resp.CreateReplaySession.Error.Typename)
+	}
+
+	return resp.CreateReplaySession.Session, nil
+}
+
 // StartReplayTaskInput is the input for starting a replay task
 type StartReplayTaskInput struct {
 	Connection ConnectionInfoInput       `json:"connection"`

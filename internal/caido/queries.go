@@ -214,7 +214,7 @@ query ReplayEntry($id: ID!) {
     connection {
       host
       port
-      isTls
+      isTLS
     }
     request {
       id

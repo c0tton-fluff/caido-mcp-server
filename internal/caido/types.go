@@ -177,7 +177,7 @@ type ReplayEntry struct {
 type ConnectionInfo struct {
 	Host  string `json:"host"`
 	Port  int    `json:"port"`
-	IsTLS bool   `json:"isTls"`
+	IsTLS bool   `json:"isTLS"`
 }
 
 // ReplayEntryConnection is the paginated result of replay entries

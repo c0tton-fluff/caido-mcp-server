@@ -253,15 +253,13 @@ mutation StartReplayTask($sessionId: ID!, $input: StartReplayTaskInput!) {
 `
 
 	// CreateReplaySessionMutation creates a new replay session
+	// Note: CreateReplaySessionPayload has NO error field per official schema
 	CreateReplaySessionMutation = `
 mutation CreateReplaySession($input: CreateReplaySessionInput!) {
   createReplaySession(input: $input) {
     session {
       id
       name
-    }
-    error {
-      __typename
     }
   }
 }

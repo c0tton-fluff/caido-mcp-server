@@ -312,12 +312,10 @@ type CreateReplaySessionInput struct {
 }
 
 // CreateReplaySessionResult is the response from creating a replay session
+// Note: CreateReplaySessionPayload has NO error field per official schema
 type CreateReplaySessionResult struct {
 	CreateReplaySession struct {
 		Session *ReplaySession `json:"session"`
-		Error   *struct {
-			Typename string `json:"__typename"`
-		} `json:"error"`
 	} `json:"createReplaySession"`
 }
 
@@ -331,8 +329,8 @@ func (c *Client) CreateReplaySession(ctx context.Context) (*ReplaySession, error
 		return nil, fmt.Errorf("failed to create replay session: %w", err)
 	}
 
-	if resp.CreateReplaySession.Error != nil {
-		return nil, fmt.Errorf("create replay session error: %s", resp.CreateReplaySession.Error.Typename)
+	if resp.CreateReplaySession.Session == nil {
+		return nil, fmt.Errorf("failed to create replay session: no session returned")
 	}
 
 	return resp.CreateReplaySession.Session, nil

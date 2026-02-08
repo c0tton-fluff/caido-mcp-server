@@ -55,5 +55,6 @@ func RegisterListReplaySessionsTool(server *mcp.Server, client *caido.Client) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "caido_list_replay_sessions",
 		Description: `List replay sessions. Returns id/name.`,
+		InputSchema: map[string]any{"type": "object"},
 	}, listReplaySessionsHandler(client))
 }

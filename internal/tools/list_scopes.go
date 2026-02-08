@@ -55,5 +55,6 @@ func RegisterListScopesTool(server *mcp.Server, client *caido.Client) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "caido_list_scopes",
 		Description: `List scopes. Returns name/allowlist/denylist.`,
+		InputSchema: map[string]any{"type": "object"},
 	}, listScopesHandler(client))
 }

@@ -147,6 +147,13 @@ func shouldInclude(include []string, field string) bool {
 	return false
 }
 
+func includeRequiresRaw(include []string) bool {
+	return shouldInclude(include, "requestHeaders") ||
+		shouldInclude(include, "requestBody") ||
+		shouldInclude(include, "responseHeaders") ||
+		shouldInclude(include, "responseBody")
+}
+
 // processRequest converts a caido.Request to GetRequestOutput with field selection
 func processRequest(request *caido.Request, include []string, bodyOffset, bodyLimit int) GetRequestOutput {
 	output := GetRequestOutput{
@@ -205,7 +212,15 @@ func getRequestHandler(client *caido.Client) func(context.Context, *mcp.CallTool
 		// Fetch requests
 		var results []GetRequestOutput
 		for _, id := range input.IDs {
-			request, err := client.GetRequest(ctx, id)
+			var (
+				request *caido.Request
+				err     error
+			)
+			if includeRequiresRaw(include) {
+				request, err = client.GetRequest(ctx, id)
+			} else {
+				request, err = client.GetRequestMetadata(ctx, id)
+			}
 			if err != nil {
 				results = append(results, GetRequestOutput{
 					ID:    id,

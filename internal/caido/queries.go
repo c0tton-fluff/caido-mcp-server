@@ -32,25 +32,46 @@ query Requests($first: Int, $after: String, $filter: HTTPQL) {
 
 	// RequestQuery is the GraphQL query for getting a single request by ID
 	RequestQuery = `
-query Request($id: ID!) {
-  request(id: $id) {
-    id
-    method
-    host
-    port
-    path
-    query
-    isTls
-    raw
-    createdAt
-    response {
-      statusCode
-      raw
-      roundtripTime
-    }
-  }
-}
-`
+	query Request($id: ID!) {
+	  request(id: $id) {
+	    id
+	    method
+	    host
+	    port
+	    path
+	    query
+	    isTls
+	    raw
+	    createdAt
+	    response {
+	      statusCode
+	      raw
+	      roundtripTime
+	    }
+	  }
+	}
+	`
+
+	// RequestMetadataQuery is a slimmer version of RequestQuery that avoids fetching
+	// potentially large raw request/response payloads when they are not needed.
+	RequestMetadataQuery = `
+	query RequestMetadata($id: ID!) {
+	  request(id: $id) {
+	    id
+	    method
+	    host
+	    port
+	    path
+	    query
+	    isTls
+	    createdAt
+	    response {
+	      statusCode
+	      roundtripTime
+	    }
+	  }
+	}
+	`
 
 	// StartAuthenticationFlowMutation initiates the OAuth flow
 	StartAuthenticationFlowMutation = `
@@ -124,39 +145,37 @@ query AutomateSession($id: ID!) {
 
 	// AutomateEntryQuery gets a single Automate entry with fuzz results
 	AutomateEntryQuery = `
-query AutomateEntry($id: ID!, $first: Int, $after: String) {
-  automateEntry(id: $id) {
-    id
-    name
-    createdAt
-    requests(first: $first, after: $after) {
-      edges {
-        cursor
-        node {
-          sequenceId
-          automateEntryId
-          payloads {
-            raw
-            position
-          }
-          error
-          request {
-            id
-            method
-            host
-            port
-            path
-            query
-            isTls
-            raw
-            response {
-              statusCode
-              raw
-              roundtripTime
-            }
-          }
-        }
-      }
+	query AutomateEntry($id: ID!, $first: Int, $after: String) {
+	  automateEntry(id: $id) {
+	    id
+	    name
+	    createdAt
+	    requests(first: $first, after: $after) {
+	      edges {
+	        cursor
+	        node {
+	          sequenceId
+	          automateEntryId
+	          payloads {
+	            raw
+	            position
+	          }
+	          error
+	          request {
+	            id
+	            method
+	            host
+	            port
+	            path
+	            query
+	            isTls
+	            response {
+	              statusCode
+	              roundtripTime
+	            }
+	          }
+	        }
+	      }
       pageInfo {
         hasNextPage
         endCursor

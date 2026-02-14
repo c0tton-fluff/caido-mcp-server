@@ -100,6 +100,24 @@ func (c *Client) GetRequest(ctx context.Context, id string) (*Request, error) {
 	return resp.Request, nil
 }
 
+// GetRequestMetadata fetches a single request by ID without requesting large raw
+// request/response payloads. Useful for metadata-only tool calls.
+func (c *Client) GetRequestMetadata(ctx context.Context, id string) (*Request, error) {
+	req := graphql.NewRequest(RequestMetadataQuery)
+	req.Var("id", id)
+
+	var resp GetRequestResult
+	if err := c.doRequest(ctx, req, &resp); err != nil {
+		return nil, fmt.Errorf("failed to get request: %w", err)
+	}
+
+	if resp.Request == nil {
+		return nil, fmt.Errorf("request not found: %s", id)
+	}
+
+	return resp.Request, nil
+}
+
 // StartAuthenticationFlowResult is the response from starting auth flow
 type StartAuthenticationFlowResult struct {
 	StartAuthenticationFlow struct {
@@ -338,9 +356,9 @@ func (c *Client) CreateReplaySession(ctx context.Context) (*ReplaySession, error
 
 // StartReplayTaskInput is the input for starting a replay task
 type StartReplayTaskInput struct {
-	Connection ConnectionInfoInput       `json:"connection"`
-	Raw        string                    `json:"raw"` // Base64 encoded request
-	Settings   ReplayEntrySettingsInput  `json:"settings"`
+	Connection ConnectionInfoInput      `json:"connection"`
+	Raw        string                   `json:"raw"` // Base64 encoded request
+	Settings   ReplayEntrySettingsInput `json:"settings"`
 }
 
 // ConnectionInfoInput is the input for connection info
@@ -360,8 +378,8 @@ type ReplayEntrySettingsInput struct {
 
 // PlaceholderInput is the input for placeholders
 type PlaceholderInput struct {
-	InputRange  []int  `json:"inputRange"`
-	OutputRange []int  `json:"outputRange"`
+	InputRange    []int    `json:"inputRange"`
+	OutputRange   []int    `json:"outputRange"`
 	Preprocessors []string `json:"preprocessors"`
 }
 

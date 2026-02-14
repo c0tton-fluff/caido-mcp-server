@@ -176,14 +176,14 @@ query AutomateSession($id: ID!) {
 	          }
 	        }
 	      }
-      pageInfo {
-        hasNextPage
-        endCursor
-      }
-    }
-  }
-}
-`
+	      pageInfo {
+	        hasNextPage
+	        endCursor
+	      }
+	    }
+	  }
+	}
+	`
 
 	// ReplaySessionsQuery lists all Replay sessions
 	ReplaySessionsQuery = `

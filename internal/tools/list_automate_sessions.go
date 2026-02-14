@@ -53,5 +53,6 @@ func RegisterListAutomateSessionsTool(server *mcp.Server, client *caido.Client) 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "caido_list_automate_sessions",
 		Description: `List fuzzing sessions. Returns id/name/createdAt.`,
+		InputSchema: map[string]any{"type": "object"},
 	}, listAutomateSessionsHandler(client))
 }

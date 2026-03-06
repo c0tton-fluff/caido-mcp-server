@@ -61,33 +61,25 @@ func pollForResponse(
 	previousEntryID string,
 ) (*caido.ReplayEntry, error) {
 	for i := 0; i < pollMaxRetries; i++ {
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		case <-time.After(pollInterval):
-		}
-
 		session, err := client.GetReplaySession(ctx, sessionID)
 		if err != nil {
 			return nil, fmt.Errorf("polling failed: %w", err)
 		}
 
-		if session.ActiveEntry == nil {
-			continue
+		if session.ActiveEntry != nil && session.ActiveEntry.ID != previousEntryID {
+			entry, err := client.GetReplayEntry(ctx, session.ActiveEntry.ID)
+			if err != nil {
+				return nil, fmt.Errorf("polling failed: %w", err)
+			}
+			if entry.Request != nil && entry.Request.Response != nil {
+				return entry, nil
+			}
 		}
 
-		// Skip stale entry from previous request
-		if session.ActiveEntry.ID == previousEntryID {
-			continue
-		}
-
-		entry, err := client.GetReplayEntry(ctx, session.ActiveEntry.ID)
-		if err != nil {
-			return nil, fmt.Errorf("polling failed: %w", err)
-		}
-
-		if entry.Request != nil && entry.Request.Response != nil {
-			return entry, nil
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(pollInterval):
 		}
 	}
 	return nil, fmt.Errorf("timed out after %ds waiting for response", pollMaxRetries/2)

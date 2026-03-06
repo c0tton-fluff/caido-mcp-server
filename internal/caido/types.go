@@ -57,15 +57,6 @@ type Response struct {
 	RoundtripTime int    `json:"roundtripTime"` // in milliseconds
 }
 
-// RequestSummary is a minimal representation of a request for list views
-type RequestSummary struct {
-	ID         string `json:"id"`
-	Method     string `json:"method"`
-	Host       string `json:"host"`
-	Path       string `json:"path"`
-	StatusCode int    `json:"statusCode,omitempty"`
-}
-
 // PageInfo contains pagination information
 type PageInfo struct {
 	HasNextPage     bool   `json:"hasNextPage"`

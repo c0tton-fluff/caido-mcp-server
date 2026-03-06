@@ -48,12 +48,36 @@ func runServe(cmd *cobra.Command, args []string) error {
 	// Create Caido client
 	client := caido.NewClient(caidoURL)
 
-	// Get token
-	token, err := getToken(ctx, client)
+	// Get token and set up auto-refresh
+	token, tokenStore, err := getTokenAndStore(ctx, client)
 	if err != nil {
 		return err
 	}
 	client.SetToken(token)
+
+	// Auto-refresh expired tokens before each GraphQL request
+	client.SetTokenRefresher(func(ctx context.Context) (string, error) {
+		stored, err := tokenStore.Load()
+		if err != nil || stored == nil {
+			return "", nil
+		}
+		if !tokenStore.IsExpired(stored) {
+			return "", nil
+		}
+		if stored.RefreshToken == "" {
+			return "", fmt.Errorf("token expired, no refresh token")
+		}
+		newToken, err := client.RefreshToken(ctx, stored.RefreshToken)
+		if err != nil {
+			return "", err
+		}
+		_ = tokenStore.Save(&auth.StoredToken{
+			AccessToken:  newToken.AccessToken,
+			RefreshToken: newToken.RefreshToken,
+			ExpiresAt:    newToken.ExpiresAt,
+		})
+		return newToken.AccessToken, nil
+	})
 
 	// Create MCP server
 	server := mcp.NewServer(
@@ -97,45 +121,58 @@ func runServe(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// getToken retrieves the access token from stored file
-func getToken(ctx context.Context, client *caido.Client) (string, error) {
+// getTokenAndStore retrieves the access token and returns the
+// token store for use in auto-refresh.
+func getTokenAndStore(
+	ctx context.Context,
+	client *caido.Client,
+) (string, *auth.TokenStore, error) {
 	tokenStore, err := auth.NewTokenStore()
 	if err != nil {
-		return "", fmt.Errorf("failed to create token store: %w", err)
+		return "", nil, fmt.Errorf("failed to create token store: %w", err)
 	}
 
 	storedToken, err := tokenStore.Load()
 	if err != nil {
-		return "", fmt.Errorf("failed to load token: %w", err)
+		return "", nil, fmt.Errorf("failed to load token: %w", err)
 	}
 
 	if storedToken == nil {
-		return "", fmt.Errorf("no authentication token found. Please run 'caido-mcp-server login' first")
+		return "", nil, fmt.Errorf(
+			"no authentication token found. " +
+				"Please run 'caido-mcp-server login' first",
+		)
 	}
 
 	// Check if token is expired and needs refresh
 	if tokenStore.IsExpired(storedToken) {
 		if storedToken.RefreshToken == "" {
-			return "", fmt.Errorf("token expired and no refresh token available. Please run 'caido-mcp-server login' again")
+			return "", nil, fmt.Errorf(
+				"token expired and no refresh token available. " +
+					"Please run 'caido-mcp-server login' again",
+			)
 		}
 
-		// Try to refresh
 		newToken, err := client.RefreshToken(ctx, storedToken.RefreshToken)
 		if err != nil {
-			return "", fmt.Errorf("token expired and refresh failed: %w. Please run 'caido-mcp-server login' again", err)
+			return "", nil, fmt.Errorf(
+				"token expired and refresh failed: %w. "+
+					"Please run 'caido-mcp-server login' again", err,
+			)
 		}
 
-		// Save the new token
 		storedToken = &auth.StoredToken{
 			AccessToken:  newToken.AccessToken,
 			RefreshToken: newToken.RefreshToken,
 			ExpiresAt:    newToken.ExpiresAt,
 		}
 		if err := tokenStore.Save(storedToken); err != nil {
-			// Log to stderr but don't fail
-			fmt.Fprintf(os.Stderr, "Warning: failed to save refreshed token: %v\n", err)
+			fmt.Fprintf(
+				os.Stderr,
+				"Warning: failed to save refreshed token: %v\n", err,
+			)
 		}
 	}
 
-	return storedToken.AccessToken, nil
+	return storedToken.AccessToken, tokenStore, nil
 }

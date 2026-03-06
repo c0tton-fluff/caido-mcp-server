@@ -4,13 +4,19 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
-	"net/url"
+	"net"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/c0tton-fluff/caido-mcp-server/internal/caido"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+)
+
+var (
+	defaultSessionID string
+	sessionMu        sync.Mutex
 )
 
 // SendRequestInput is the input for the send_request tool
@@ -29,9 +35,62 @@ type SendRequestInput struct {
 
 // SendRequestOutput is the output of the send_request tool
 type SendRequestOutput struct {
-	TaskID    string `json:"taskId"`
-	SessionID string `json:"sessionId"`
-	Message   string `json:"message"`
+	RequestID   string             `json:"requestId,omitempty"`
+	EntryID     string             `json:"entryId,omitempty"`
+	SessionID   string             `json:"sessionId"`
+	StatusCode  int                `json:"statusCode,omitempty"`
+	RoundtripMs int                `json:"roundtripMs,omitempty"`
+	Request     *ParsedHTTPMessage `json:"request,omitempty"`
+	Response    *ParsedHTTPMessage `json:"response,omitempty"`
+	Error       string             `json:"error,omitempty"`
+}
+
+const (
+	pollInterval   = 500 * time.Millisecond
+	pollMaxRetries = 20 // 10s total
+	defaultBodyLim = 2000
+)
+
+// pollForResponse polls the replay session until a NEW response is available.
+// previousEntryID is the active entry before StartReplayTask was called;
+// we skip it to avoid returning stale data from the previous request.
+func pollForResponse(
+	ctx context.Context,
+	client *caido.Client,
+	sessionID string,
+	previousEntryID string,
+) (*caido.ReplayEntry, error) {
+	for i := 0; i < pollMaxRetries; i++ {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(pollInterval):
+		}
+
+		session, err := client.GetReplaySession(ctx, sessionID)
+		if err != nil {
+			continue
+		}
+
+		if session.ActiveEntry == nil {
+			continue
+		}
+
+		// Skip stale entry from previous request
+		if session.ActiveEntry.ID == previousEntryID {
+			continue
+		}
+
+		entry, err := client.GetReplayEntry(ctx, session.ActiveEntry.ID)
+		if err != nil {
+			continue
+		}
+
+		if entry.Request != nil && entry.Request.Response != nil {
+			return entry, nil
+		}
+	}
+	return nil, fmt.Errorf("timed out after %ds waiting for response", pollMaxRetries/2)
 }
 
 // parseHostFromRequest extracts host from raw HTTP request
@@ -75,13 +134,12 @@ func sendRequestHandler(client *caido.Client) func(context.Context, *mcp.CallToo
 			return nil, SendRequestOutput{}, fmt.Errorf("host is required (provide in input or Host header)")
 		}
 
-		// Parse host:port if present
-		if strings.Contains(host, ":") {
-			parts := strings.Split(host, ":")
-			host = parts[0]
-			if input.Port == 0 && len(parts) > 1 {
-				if p, err := strconv.Atoi(parts[1]); err == nil {
-					input.Port = p
+		// Parse host:port if present (handles IPv6 like [::1]:8080)
+		if h, p, err := net.SplitHostPort(host); err == nil {
+			host = h
+			if input.Port == 0 {
+				if port, err := strconv.Atoi(p); err == nil {
+					input.Port = port
 				}
 			}
 		}
@@ -102,15 +160,28 @@ func sendRequestHandler(client *caido.Client) func(context.Context, *mcp.CallToo
 			}
 		}
 
-		// Use specified session or create a new one
+		// Use specified session or lazily create/reuse default
 		sessionID := input.SessionID
 		if sessionID == "" {
-			// Create a new replay session to avoid TaskInProgressUserError
-			session, err := client.CreateReplaySession(ctx)
-			if err != nil {
-				return nil, SendRequestOutput{}, fmt.Errorf("failed to create replay session: %w", err)
+			sessionMu.Lock()
+			if defaultSessionID == "" {
+				session, err := client.CreateReplaySession(ctx)
+				if err != nil {
+					sessionMu.Unlock()
+					return nil, SendRequestOutput{}, fmt.Errorf(
+						"failed to create replay session: %w", err,
+					)
+				}
+				defaultSessionID = session.ID
 			}
-			sessionID = session.ID
+			sessionID = defaultSessionID
+			sessionMu.Unlock()
+		}
+
+		// Snapshot current active entry to detect stale polls later
+		var previousEntryID string
+		if sess, err := client.GetReplaySession(ctx, sessionID); err == nil && sess.ActiveEntry != nil {
+			previousEntryID = sess.ActiveEntry.ID
 		}
 
 		// Encode request as base64
@@ -131,18 +202,68 @@ func sendRequestHandler(client *caido.Client) func(context.Context, *mcp.CallToo
 			},
 		}
 
-		taskID, err := client.StartReplayTask(ctx, sessionID, taskInput)
+		_, err := client.StartReplayTask(ctx, sessionID, taskInput)
 		if err != nil {
-			return nil, SendRequestOutput{}, fmt.Errorf("failed to send request: %w", err)
+			// On TaskInProgressUserError, create a new session and retry
+			if strings.Contains(err.Error(), "TaskInProgressUserError") {
+				session, createErr := client.CreateReplaySession(ctx)
+				if createErr != nil {
+					return nil, SendRequestOutput{}, fmt.Errorf(
+						"failed to create fallback session: %w", createErr,
+					)
+				}
+				sessionID = session.ID
+
+				if input.SessionID == "" {
+					sessionMu.Lock()
+					defaultSessionID = sessionID
+					sessionMu.Unlock()
+				}
+
+				_, err = client.StartReplayTask(ctx, sessionID, taskInput)
+				if err != nil {
+					return nil, SendRequestOutput{}, fmt.Errorf(
+						"failed to send request (retry): %w", err,
+					)
+				}
+			} else {
+				return nil, SendRequestOutput{}, fmt.Errorf(
+					"failed to send request: %w", err,
+				)
+			}
 		}
 
-		// Wait a moment for the request to complete
-		time.Sleep(100 * time.Millisecond)
+		output := SendRequestOutput{SessionID: sessionID}
 
-		output := SendRequestOutput{
-			TaskID:    taskID,
-			SessionID: sessionID,
-			Message:   fmt.Sprintf("Request sent to %s://%s:%d", map[bool]string{true: "https", false: "http"}[useTLS], host, port),
+		// Poll for response inline (skip previous entry to avoid stale data)
+		entry, pollErr := pollForResponse(ctx, client, sessionID, previousEntryID)
+		if pollErr != nil {
+			output.Error = fmt.Sprintf(
+				"poll failed: %v (use get_replay_entry to retry)", pollErr,
+			)
+			// Still try to get entryID for follow-up
+			if session, sErr := client.GetReplaySession(ctx, sessionID); sErr == nil && session.ActiveEntry != nil {
+				output.EntryID = session.ActiveEntry.ID
+			}
+			return nil, output, nil
+		}
+
+		output.EntryID = entry.ID
+
+		// Populate request metadata
+		if entry.Request != nil {
+			output.RequestID = entry.Request.ID
+			output.Request = parseHTTPMessage(
+				entry.Request.Raw, true, false, 0, 0,
+			)
+			if entry.Request.Response != nil {
+				resp := entry.Request.Response
+				output.StatusCode = resp.StatusCode
+				output.RoundtripMs = resp.RoundtripTime
+				output.Response = parseHTTPMessage(
+					resp.Raw, true, true, 0, defaultBodyLim,
+				)
+			}
 		}
 
 		return nil, output, nil
@@ -153,11 +274,6 @@ func sendRequestHandler(client *caido.Client) func(context.Context, *mcp.CallToo
 func RegisterSendRequestTool(server *mcp.Server, client *caido.Client) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "caido_send_request",
-		Description: `Send HTTP request. Params: raw (full request), host, port, tls (default true).`,
+		Description: `Send HTTP request and return response inline. Returns statusCode, headers, body (2KB limit). Polls up to 10s for response. On timeout, returns entryId for manual follow-up via get_replay_entry. Params: raw (full request), host, port, tls (default true).`,
 	}, sendRequestHandler(client))
-}
-
-// Helper to URL encode
-func urlEncode(s string) string {
-	return url.QueryEscape(s)
 }

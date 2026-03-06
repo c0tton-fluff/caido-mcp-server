@@ -11,7 +11,9 @@ import (
 
 // GetReplayEntryInput is the input for the get_replay_entry tool
 type GetReplayEntryInput struct {
-	ID string `json:"id" jsonschema:"required,Replay entry ID"`
+	ID         string `json:"id" jsonschema:"required,Replay entry ID"`
+	BodyOffset int    `json:"bodyOffset,omitempty" jsonschema:"Body byte offset"`
+	BodyLimit  int    `json:"bodyLimit,omitempty" jsonschema:"Body byte limit (default 2000)"`
 }
 
 // GetReplayEntryOutput is the output of the get_replay_entry tool
@@ -38,6 +40,11 @@ func getReplayEntryHandler(client *caido.Client) func(context.Context, *mcp.Call
 			return nil, GetReplayEntryOutput{}, err
 		}
 
+		bodyLimit := input.BodyLimit
+		if bodyLimit == 0 {
+			bodyLimit = 2000
+		}
+
 		output := GetReplayEntryOutput{
 			ID: entry.ID,
 		}
@@ -62,7 +69,10 @@ func getReplayEntryHandler(client *caido.Client) func(context.Context, *mcp.Call
 			resp := entry.Request.Response
 			output.StatusCode = resp.StatusCode
 			output.RoundtripMs = resp.RoundtripTime
-			output.Response = parseHTTPMessage(resp.Raw, true, true, 0, 0)
+			output.Response = parseHTTPMessage(
+				resp.Raw, true, true,
+				input.BodyOffset, bodyLimit,
+			)
 		}
 
 		return nil, output, nil

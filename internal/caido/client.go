@@ -4,15 +4,23 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"sync"
 
 	"github.com/machinebox/graphql"
 )
+
+// TokenRefreshFunc refreshes the token and returns a new access token.
+// Returns ("", nil) to skip refresh (token still valid).
+type TokenRefreshFunc func(ctx context.Context) (string, error)
 
 // Client is a GraphQL client for Caido
 type Client struct {
 	client   *graphql.Client
 	endpoint string
 	token    string
+	tokenMu  sync.RWMutex
+
+	refreshFn TokenRefreshFunc
 }
 
 // NewClient creates a new Caido GraphQL client
@@ -26,13 +34,55 @@ func NewClient(endpoint string) *Client {
 
 // SetToken sets the authentication token
 func (c *Client) SetToken(token string) {
+	c.tokenMu.Lock()
 	c.token = token
+	c.tokenMu.Unlock()
 }
 
-// doRequest executes a GraphQL request with authentication
-func (c *Client) doRequest(ctx context.Context, req *graphql.Request, resp interface{}) error {
-	if c.token != "" {
-		req.Header.Set("Authorization", "Bearer "+c.token)
+// SetTokenRefresher sets the callback used to refresh expired tokens.
+func (c *Client) SetTokenRefresher(fn TokenRefreshFunc) {
+	c.refreshFn = fn
+}
+
+// doRequestRaw executes a GraphQL request with the current token
+// but does NOT trigger auto-refresh. Used by RefreshToken itself
+// to avoid recursion.
+func (c *Client) doRequestRaw(
+	ctx context.Context,
+	req *graphql.Request,
+	resp interface{},
+) error {
+	c.tokenMu.RLock()
+	token := c.token
+	c.tokenMu.RUnlock()
+
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	return c.client.Run(ctx, req, resp)
+}
+
+// doRequest executes a GraphQL request with authentication.
+// If a refreshFn is set, it checks and refreshes the token first.
+func (c *Client) doRequest(
+	ctx context.Context,
+	req *graphql.Request,
+	resp interface{},
+) error {
+	if c.refreshFn != nil {
+		if newToken, err := c.refreshFn(ctx); err == nil && newToken != "" {
+			c.tokenMu.Lock()
+			c.token = newToken
+			c.tokenMu.Unlock()
+		}
+	}
+
+	c.tokenMu.RLock()
+	token := c.token
+	c.tokenMu.RUnlock()
+
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
 	}
 	return c.client.Run(ctx, req, resp)
 }
@@ -154,13 +204,14 @@ type RefreshTokenResult struct {
 	} `json:"refreshAuthenticationToken"`
 }
 
-// RefreshToken refreshes the access token using the refresh token
+// RefreshToken refreshes the access token using the refresh token.
+// Uses doRequestRaw to avoid triggering the refresh callback recursively.
 func (c *Client) RefreshToken(ctx context.Context, refreshToken string) (*AuthenticationToken, error) {
 	req := graphql.NewRequest(RefreshAuthenticationTokenMutation)
 	req.Var("refreshToken", refreshToken)
 
 	var resp RefreshTokenResult
-	if err := c.doRequest(ctx, req, &resp); err != nil {
+	if err := c.doRequestRaw(ctx, req, &resp); err != nil {
 		return nil, fmt.Errorf("failed to refresh token: %w", err)
 	}
 

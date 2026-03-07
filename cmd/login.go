@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	caido "github.com/caido-community/sdk-go"
 	"github.com/c0tton-fluff/caido-mcp-server/internal/auth"
-	"github.com/c0tton-fluff/caido-mcp-server/internal/caido"
 	"github.com/spf13/cobra"
 )
 
@@ -33,34 +33,47 @@ func runLogin(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// Create Caido client
-	client := caido.NewClient(caidoURL)
-
-	// Create authenticator
-	authenticator, err := auth.NewAuthenticator(client)
+	client, err := caido.NewClient(
+		caido.Options{URL: caidoURL},
+	)
 	if err != nil {
-		return fmt.Errorf("failed to create authenticator: %w", err)
+		return fmt.Errorf("failed to create client: %w", err)
 	}
 
-	// Start authentication with a reasonable timeout
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	authenticator, err := auth.NewAuthenticator(client)
+	if err != nil {
+		return fmt.Errorf(
+			"failed to create authenticator: %w", err,
+		)
+	}
+
+	ctx, cancel := context.WithTimeout(
+		context.Background(), 5*time.Minute,
+	)
 	defer cancel()
 
-	// Run the OAuth flow
 	token, err := authenticator.EnsureAuthenticated(ctx)
 	if err != nil {
 		return fmt.Errorf("authentication failed: %w", err)
 	}
 
-	// Verify it works
-	client.SetToken(token)
-	_, err = client.ListRequests(ctx, caido.ListRequestsOptions{First: 1})
+	// Verify the token works
+	client.SetAccessToken(token)
+	one := 1
+	_, err = client.Requests.List(
+		ctx, &caido.ListRequestsOptions{First: &one},
+	)
 	if err != nil {
-		return fmt.Errorf("token verification failed: %w", err)
+		return fmt.Errorf(
+			"token verification failed: %w", err,
+		)
 	}
 
 	fmt.Println()
-	fmt.Println("You can now use 'caido-mcp serve' to start the MCP server.")
+	fmt.Println(
+		"You can now use 'caido-mcp serve' " +
+			"to start the MCP server.",
+	)
 
 	return nil
 }

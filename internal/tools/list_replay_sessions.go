@@ -3,7 +3,7 @@ package tools
 import (
 	"context"
 
-	"github.com/c0tton-fluff/caido-mcp-server/internal/caido"
+	caido "github.com/caido-community/sdk-go"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -23,25 +23,35 @@ type ListReplaySessionsOutput struct {
 }
 
 // listReplaySessionsHandler creates the handler function
-func listReplaySessionsHandler(client *caido.Client) func(context.Context, *mcp.CallToolRequest, ListReplaySessionsInput) (*mcp.CallToolResult, ListReplaySessionsOutput, error) {
-	return func(ctx context.Context, req *mcp.CallToolRequest, input ListReplaySessionsInput) (*mcp.CallToolResult, ListReplaySessionsOutput, error) {
-		result, err := client.ListReplaySessions(ctx)
+func listReplaySessionsHandler(
+	client *caido.Client,
+) func(context.Context, *mcp.CallToolRequest, ListReplaySessionsInput) (*mcp.CallToolResult, ListReplaySessionsOutput, error) {
+	return func(
+		ctx context.Context,
+		req *mcp.CallToolRequest,
+		input ListReplaySessionsInput,
+	) (*mcp.CallToolResult, ListReplaySessionsOutput, error) {
+		resp, err := client.Replay.ListSessions(ctx, nil)
 		if err != nil {
 			return nil, ListReplaySessionsOutput{}, err
 		}
 
+		conn := resp.ReplaySessions
 		output := ListReplaySessionsOutput{
-			Sessions: make([]ReplaySessionSummary, 0, len(result.ReplaySessions.Edges)),
+			Sessions: make(
+				[]ReplaySessionSummary, 0, len(conn.Edges),
+			),
 		}
 
-		for _, edge := range result.ReplaySessions.Edges {
+		for _, edge := range conn.Edges {
 			s := edge.Node
 			summary := ReplaySessionSummary{
-				ID:   s.ID,
+				ID:   s.Id,
 				Name: s.Name,
 			}
 			if s.ActiveEntry != nil {
-				summary.ActiveEntryID = &s.ActiveEntry.ID
+				id := s.ActiveEntry.Id
+				summary.ActiveEntryID = &id
 			}
 			output.Sessions = append(output.Sessions, summary)
 		}
@@ -51,7 +61,9 @@ func listReplaySessionsHandler(client *caido.Client) func(context.Context, *mcp.
 }
 
 // RegisterListReplaySessionsTool registers the tool with the MCP server
-func RegisterListReplaySessionsTool(server *mcp.Server, client *caido.Client) {
+func RegisterListReplaySessionsTool(
+	server *mcp.Server, client *caido.Client,
+) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "caido_list_replay_sessions",
 		Description: `List replay sessions. Returns id/name.`,

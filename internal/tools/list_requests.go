@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/c0tton-fluff/caido-mcp-server/internal/caido"
+	caido "github.com/caido-community/sdk-go"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -31,57 +31,74 @@ type RequestSummary struct {
 }
 
 // listRequestsHandler creates the handler function for the list_requests tool
-func listRequestsHandler(client *caido.Client) func(context.Context, *mcp.CallToolRequest, ListRequestsInput) (*mcp.CallToolResult, ListRequestsOutput, error) {
-	return func(ctx context.Context, req *mcp.CallToolRequest, input ListRequestsInput) (*mcp.CallToolResult, ListRequestsOutput, error) {
+func listRequestsHandler(
+	client *caido.Client,
+) func(context.Context, *mcp.CallToolRequest, ListRequestsInput) (*mcp.CallToolResult, ListRequestsOutput, error) {
+	return func(
+		ctx context.Context,
+		req *mcp.CallToolRequest,
+		input ListRequestsInput,
+	) (*mcp.CallToolResult, ListRequestsOutput, error) {
 		limit := input.Limit
 		if limit <= 0 {
-			limit = 10 // Small default to save context
+			limit = 10
 		}
 		if limit > 100 {
 			limit = 100
 		}
 
-		opts := caido.ListRequestsOptions{
-			First:  limit,
-			After:  input.After,
-			Filter: input.HTTPQL,
+		opts := &caido.ListRequestsOptions{
+			First: &limit,
+		}
+		if input.HTTPQL != "" {
+			opts.Filter = &input.HTTPQL
+		}
+		if input.After != "" {
+			opts.After = &input.After
 		}
 
-		result, err := client.ListRequests(ctx, opts)
+		resp, err := client.Requests.List(ctx, opts)
 		if err != nil {
-			return nil, ListRequestsOutput{}, fmt.Errorf("failed to list requests: %w", err)
+			return nil, ListRequestsOutput{}, fmt.Errorf(
+				"failed to list requests: %w", err,
+			)
 		}
 
+		conn := resp.Requests
 		output := ListRequestsOutput{
-			Requests:   make([]RequestSummary, 0, len(result.Requests.Edges)),
-			HasMore:    result.Requests.PageInfo.HasNextPage,
-			NextCursor: result.Requests.PageInfo.EndCursor,
+			Requests: make([]RequestSummary, 0, len(conn.Edges)),
 		}
 
-		for _, edge := range result.Requests.Edges {
+		for _, edge := range conn.Edges {
 			r := edge.Node
-			url := buildURL(r.IsTLS, r.Host, r.Port, r.Path, r.Query)
-
 			summary := RequestSummary{
-				ID:     r.ID,
+				ID:     r.Id,
 				Method: r.Method,
-				URL:    url,
+				URL: buildURL(
+					r.IsTls, r.Host, r.Port, r.Path, r.Query,
+				),
 			}
-
 			if r.Response != nil {
 				summary.StatusCode = r.Response.StatusCode
 			}
-
 			output.Requests = append(output.Requests, summary)
 		}
 
-		// Return nil for result, the SDK will create one from the output
+		if conn.PageInfo != nil && conn.PageInfo.HasNextPage {
+			output.HasMore = true
+			if conn.PageInfo.EndCursor != nil {
+				output.NextCursor = *conn.PageInfo.EndCursor
+			}
+		}
+
 		return nil, output, nil
 	}
 }
 
 // buildURL constructs the full URL from request parts
-func buildURL(isTLS bool, host string, port int, path string, query string) string {
+func buildURL(
+	isTLS bool, host string, port int, path, query string,
+) string {
 	scheme := "http"
 	if isTLS {
 		scheme = "https"
@@ -89,7 +106,6 @@ func buildURL(isTLS bool, host string, port int, path string, query string) stri
 
 	url := fmt.Sprintf("%s://%s", scheme, host)
 
-	// Add port if non-standard
 	if (isTLS && port != 443) || (!isTLS && port != 80) {
 		url = fmt.Sprintf("%s:%d", url, port)
 	}
@@ -104,7 +120,9 @@ func buildURL(isTLS bool, host string, port int, path string, query string) stri
 }
 
 // RegisterListRequestsTool registers the tool with the MCP server
-func RegisterListRequestsTool(server *mcp.Server, client *caido.Client) {
+func RegisterListRequestsTool(
+	server *mcp.Server, client *caido.Client,
+) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "caido_list_requests",
 		Description: `List HTTP requests. Filter with httpql (e.g. req.host.eq:"example.com"). Returns id/method/url/status.`,

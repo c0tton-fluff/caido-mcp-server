@@ -7,8 +7,8 @@ import (
 	"os/signal"
 	"syscall"
 
+	caido "github.com/caido-community/sdk-go"
 	"github.com/c0tton-fluff/caido-mcp-server/internal/auth"
-	"github.com/c0tton-fluff/caido-mcp-server/internal/caido"
 	"github.com/c0tton-fluff/caido-mcp-server/internal/tools"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/spf13/cobra"
@@ -37,7 +37,6 @@ func runServe(cmd *cobra.Command, args []string) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Handle signals
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
@@ -45,41 +44,23 @@ func runServe(cmd *cobra.Command, args []string) error {
 		cancel()
 	}()
 
-	// Create Caido client
-	client := caido.NewClient(caidoURL)
+	client, err := caido.NewClient(
+		caido.Options{URL: caidoURL},
+	)
+	if err != nil {
+		return fmt.Errorf("failed to create client: %w", err)
+	}
 
-	// Get token and set up auto-refresh
 	token, tokenStore, err := getTokenAndStore(ctx, client)
 	if err != nil {
 		return err
 	}
-	client.SetToken(token)
+	client.SetAccessToken(token)
 
-	// Auto-refresh expired tokens before each GraphQL request
-	client.SetTokenRefresher(func(ctx context.Context) (string, error) {
-		stored, err := tokenStore.Load()
-		if err != nil || stored == nil {
-			return "", nil
-		}
-		if !tokenStore.IsExpired(stored) {
-			return "", nil
-		}
-		if stored.RefreshToken == "" {
-			return "", fmt.Errorf("token expired, no refresh token")
-		}
-		newToken, err := client.RefreshToken(ctx, stored.RefreshToken)
-		if err != nil {
-			return "", err
-		}
-		_ = tokenStore.Save(&auth.StoredToken{
-			AccessToken:  newToken.AccessToken,
-			RefreshToken: newToken.RefreshToken,
-			ExpiresAt:    newToken.ExpiresAt,
-		})
-		return newToken.AccessToken, nil
-	})
+	client.SetTokenRefresher(
+		makeTokenRefresher(client, tokenStore),
+	)
 
-	// Create MCP server
 	server := mcp.NewServer(
 		&mcp.Implementation{
 			Name:    "caido-mcp-server",
@@ -88,37 +69,100 @@ func runServe(cmd *cobra.Command, args []string) error {
 		nil,
 	)
 
-	// Register tools - HTTP History
+	// HTTP History
 	tools.RegisterListRequestsTool(server, client)
 	tools.RegisterGetRequestTool(server, client)
 
-	// Register tools - Automate (Fuzzing)
+	// Automate (Fuzzing)
 	tools.RegisterListAutomateSessionsTool(server, client)
 	tools.RegisterGetAutomateSessionTool(server, client)
 	tools.RegisterGetAutomateEntryTool(server, client)
 
-	// Register tools - Replay (Send Requests)
+	// Replay (Send Requests)
 	tools.RegisterSendRequestTool(server, client)
 	tools.RegisterListReplaySessionsTool(server, client)
 	tools.RegisterGetReplayEntryTool(server, client)
 
-	// Register tools - Findings
+	// Findings
 	tools.RegisterListFindingsTool(server, client)
 	tools.RegisterCreateFindingTool(server, client)
 
-	// Register tools - Sitemap
+	// Sitemap
 	tools.RegisterGetSitemapTool(server, client)
 
-	// Register tools - Scopes
+	// Scopes
 	tools.RegisterListScopesTool(server, client)
 	tools.RegisterCreateScopeTool(server, client)
 
-	// Run the server with stdio transport
+	// Projects
+	tools.RegisterListProjectsTool(server, client)
+	tools.RegisterSelectProjectTool(server, client)
+
+	// Workflows
+	tools.RegisterListWorkflowsTool(server, client)
+
+	// Instance
+	tools.RegisterGetInstanceTool(server, client)
+
+	// Intercept
+	tools.RegisterInterceptStatusTool(server, client)
+	tools.RegisterInterceptControlTool(server, client)
+
+	// Filters
+	tools.RegisterListFiltersTool(server, client)
+
 	if err := server.Run(ctx, &mcp.StdioTransport{}); err != nil {
 		return fmt.Errorf("server error: %w", err)
 	}
 
 	return nil
+}
+
+// makeTokenRefresher creates the auto-refresh callback.
+func makeTokenRefresher(
+	client *caido.Client, tokenStore *auth.TokenStore,
+) caido.TokenRefreshFunc {
+	return func(ctx context.Context) (string, error) {
+		stored, err := tokenStore.Load()
+		if err != nil || stored == nil {
+			return "", nil
+		}
+		if !tokenStore.IsExpired(stored) {
+			return stored.AccessToken, nil
+		}
+		if stored.RefreshToken == "" {
+			return "", fmt.Errorf(
+				"token expired, no refresh token",
+			)
+		}
+
+		resp, err := client.Auth.RefreshAuthenticationToken(
+			ctx, stored.RefreshToken,
+		)
+		if err != nil {
+			return "", err
+		}
+
+		payload := resp.RefreshAuthenticationToken
+		if payload.Error != nil || payload.Token == nil {
+			return "", fmt.Errorf("token refresh failed")
+		}
+
+		token := payload.Token
+		refreshTok := ""
+		if token.RefreshToken != nil {
+			refreshTok = *token.RefreshToken
+		}
+
+		_ = tokenStore.Save(&auth.StoredToken{
+			AccessToken:  token.AccessToken,
+			RefreshToken: refreshTok,
+			ExpiresAt: auth.ParseExpiresAt(
+				token.ExpiresAt,
+			),
+		})
+		return token.AccessToken, nil
+	}
 }
 
 // getTokenAndStore retrieves the access token and returns the
@@ -129,12 +173,16 @@ func getTokenAndStore(
 ) (string, *auth.TokenStore, error) {
 	tokenStore, err := auth.NewTokenStore()
 	if err != nil {
-		return "", nil, fmt.Errorf("failed to create token store: %w", err)
+		return "", nil, fmt.Errorf(
+			"failed to create token store: %w", err,
+		)
 	}
 
 	storedToken, err := tokenStore.Load()
 	if err != nil {
-		return "", nil, fmt.Errorf("failed to load token: %w", err)
+		return "", nil, fmt.Errorf(
+			"failed to load token: %w", err,
+		)
 	}
 
 	if storedToken == nil {
@@ -144,32 +192,51 @@ func getTokenAndStore(
 		)
 	}
 
-	// Check if token is expired and needs refresh
 	if tokenStore.IsExpired(storedToken) {
 		if storedToken.RefreshToken == "" {
 			return "", nil, fmt.Errorf(
-				"token expired and no refresh token available. " +
+				"token expired and no refresh token. " +
 					"Please run 'caido-mcp-server login' again",
 			)
 		}
 
-		newToken, err := client.RefreshToken(ctx, storedToken.RefreshToken)
+		resp, err := client.Auth.RefreshAuthenticationToken(
+			ctx, storedToken.RefreshToken,
+		)
 		if err != nil {
 			return "", nil, fmt.Errorf(
 				"token expired and refresh failed: %w. "+
-					"Please run 'caido-mcp-server login' again", err,
+					"Please run 'caido-mcp-server login' again",
+				err,
 			)
 		}
 
+		payload := resp.RefreshAuthenticationToken
+		if payload.Error != nil || payload.Token == nil {
+			return "", nil, fmt.Errorf(
+				"token refresh returned error. " +
+					"Please run 'caido-mcp-server login' again",
+			)
+		}
+
+		token := payload.Token
+		refreshTok := ""
+		if token.RefreshToken != nil {
+			refreshTok = *token.RefreshToken
+		}
+
 		storedToken = &auth.StoredToken{
-			AccessToken:  newToken.AccessToken,
-			RefreshToken: newToken.RefreshToken,
-			ExpiresAt:    newToken.ExpiresAt,
+			AccessToken:  token.AccessToken,
+			RefreshToken: refreshTok,
+			ExpiresAt: auth.ParseExpiresAt(
+				token.ExpiresAt,
+			),
 		}
 		if err := tokenStore.Save(storedToken); err != nil {
 			fmt.Fprintf(
 				os.Stderr,
-				"Warning: failed to save refreshed token: %v\n", err,
+				"Warning: failed to save refreshed token: %v\n",
+				err,
 			)
 		}
 	}

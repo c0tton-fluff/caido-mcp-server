@@ -5,7 +5,7 @@ import (
 	"encoding/base64"
 	"fmt"
 
-	"github.com/c0tton-fluff/caido-mcp-server/internal/caido"
+	caido "github.com/caido-community/sdk-go"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -19,7 +19,7 @@ type GetReplayEntryInput struct {
 // GetReplayEntryOutput is the output of the get_replay_entry tool
 type GetReplayEntryOutput struct {
 	ID          string             `json:"id"`
-	Request     string             `json:"request"`     // Decoded request
+	Request     string             `json:"request"`
 	Response    *ParsedHTTPMessage `json:"response,omitempty"`
 	Host        string             `json:"host,omitempty"`
 	Port        int                `json:"port,omitempty"`
@@ -29,15 +29,30 @@ type GetReplayEntryOutput struct {
 }
 
 // getReplayEntryHandler creates the handler function
-func getReplayEntryHandler(client *caido.Client) func(context.Context, *mcp.CallToolRequest, GetReplayEntryInput) (*mcp.CallToolResult, GetReplayEntryOutput, error) {
-	return func(ctx context.Context, req *mcp.CallToolRequest, input GetReplayEntryInput) (*mcp.CallToolResult, GetReplayEntryOutput, error) {
+func getReplayEntryHandler(
+	client *caido.Client,
+) func(context.Context, *mcp.CallToolRequest, GetReplayEntryInput) (*mcp.CallToolResult, GetReplayEntryOutput, error) {
+	return func(
+		ctx context.Context,
+		req *mcp.CallToolRequest,
+		input GetReplayEntryInput,
+	) (*mcp.CallToolResult, GetReplayEntryOutput, error) {
 		if input.ID == "" {
-			return nil, GetReplayEntryOutput{}, fmt.Errorf("entry ID is required")
+			return nil, GetReplayEntryOutput{}, fmt.Errorf(
+				"entry ID is required",
+			)
 		}
 
-		entry, err := client.GetReplayEntry(ctx, input.ID)
+		resp, err := client.Replay.GetEntry(ctx, input.ID)
 		if err != nil {
 			return nil, GetReplayEntryOutput{}, err
+		}
+
+		entry := resp.ReplayEntry
+		if entry == nil {
+			return nil, GetReplayEntryOutput{}, fmt.Errorf(
+				"entry not found",
+			)
 		}
 
 		bodyLimit := input.BodyLimit
@@ -45,32 +60,29 @@ func getReplayEntryHandler(client *caido.Client) func(context.Context, *mcp.Call
 			bodyLimit = 2000
 		}
 
-		output := GetReplayEntryOutput{
-			ID: entry.ID,
-		}
+		output := GetReplayEntryOutput{ID: entry.Id}
 
-		// Decode request
 		if entry.Raw != "" {
-			decoded, err := base64.StdEncoding.DecodeString(entry.Raw)
-			if err == nil {
+			decoded, decErr := base64.StdEncoding.DecodeString(
+				entry.Raw,
+			)
+			if decErr == nil {
 				output.Request = string(decoded)
 			}
 		}
 
-		// Connection info
 		if entry.Connection != nil {
 			output.Host = entry.Connection.Host
 			output.Port = entry.Connection.Port
 			output.IsTLS = entry.Connection.IsTLS
 		}
 
-		// Response
 		if entry.Request != nil && entry.Request.Response != nil {
-			resp := entry.Request.Response
-			output.StatusCode = resp.StatusCode
-			output.RoundtripMs = resp.RoundtripTime
+			r := entry.Request.Response
+			output.StatusCode = r.StatusCode
+			output.RoundtripMs = r.RoundtripTime
 			output.Response = parseHTTPMessage(
-				resp.Raw, true, true,
+				r.Raw, true, true,
 				input.BodyOffset, bodyLimit,
 			)
 		}
@@ -80,7 +92,9 @@ func getReplayEntryHandler(client *caido.Client) func(context.Context, *mcp.Call
 }
 
 // RegisterGetReplayEntryTool registers the tool with the MCP server
-func RegisterGetReplayEntryTool(server *mcp.Server, client *caido.Client) {
+func RegisterGetReplayEntryTool(
+	server *mcp.Server, client *caido.Client,
+) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "caido_get_replay_entry",
 		Description: `Get replay entry with request/response content.`,

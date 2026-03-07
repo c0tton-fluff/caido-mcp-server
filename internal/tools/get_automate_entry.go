@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/c0tton-fluff/caido-mcp-server/internal/caido"
+	caido "github.com/caido-community/sdk-go"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -20,7 +20,7 @@ type GetAutomateEntryInput struct {
 // FuzzRequestResult represents a single fuzz result
 type FuzzRequestResult struct {
 	SequenceID  string   `json:"sequenceId"`
-	Payloads    []string `json:"payloads"` // Decoded payloads
+	Payloads    []string `json:"payloads"`
 	Error       *string  `json:"error,omitempty"`
 	RequestID   string   `json:"requestId"`
 	Method      string   `json:"method"`
@@ -39,66 +39,106 @@ type GetAutomateEntryOutput struct {
 	NextCursor string              `json:"nextCursor,omitempty"`
 }
 
-// getAutomateEntryHandler creates the handler function for the get_automate_entry tool
-func getAutomateEntryHandler(client *caido.Client) func(context.Context, *mcp.CallToolRequest, GetAutomateEntryInput) (*mcp.CallToolResult, GetAutomateEntryOutput, error) {
-	return func(ctx context.Context, req *mcp.CallToolRequest, input GetAutomateEntryInput) (*mcp.CallToolResult, GetAutomateEntryOutput, error) {
+// getAutomateEntryHandler creates the handler function
+func getAutomateEntryHandler(
+	client *caido.Client,
+) func(context.Context, *mcp.CallToolRequest, GetAutomateEntryInput) (*mcp.CallToolResult, GetAutomateEntryOutput, error) {
+	return func(
+		ctx context.Context,
+		req *mcp.CallToolRequest,
+		input GetAutomateEntryInput,
+	) (*mcp.CallToolResult, GetAutomateEntryOutput, error) {
 		if input.ID == "" {
-			return nil, GetAutomateEntryOutput{}, fmt.Errorf("entry ID is required")
+			return nil, GetAutomateEntryOutput{}, fmt.Errorf(
+				"entry ID is required",
+			)
 		}
 
 		limit := input.Limit
 		if limit <= 0 {
-			limit = 10 // Small default to save context
+			limit = 10
 		}
 		if limit > 100 {
 			limit = 100
 		}
 
-		opts := caido.GetAutomateEntryOptions{
-			First: limit,
-			After: input.After,
+		// Get entry metadata
+		entryResp, err := client.Automate.GetEntry(ctx, input.ID)
+		if err != nil {
+			return nil, GetAutomateEntryOutput{}, err
 		}
 
-		entry, err := client.GetAutomateEntry(ctx, input.ID, opts)
+		entry := entryResp.AutomateEntry
+		if entry == nil {
+			return nil, GetAutomateEntryOutput{}, fmt.Errorf(
+				"entry not found",
+			)
+		}
+
+		// Get entry requests with pagination
+		opts := &caido.ListEntryRequestsOptions{
+			First: &limit,
+		}
+		if input.After != "" {
+			opts.After = &input.After
+		}
+
+		reqResp, err := client.Automate.GetEntryRequests(
+			ctx, input.ID, opts,
+		)
 		if err != nil {
 			return nil, GetAutomateEntryOutput{}, err
 		}
 
 		output := GetAutomateEntryOutput{
-			ID:        entry.ID,
-			Name:      entry.Name,
-			CreatedAt: entry.CreatedAt.Time().Format(time.RFC3339),
-			Results:   make([]FuzzRequestResult, 0),
+			ID:   entry.Id,
+			Name: entry.Name,
+			CreatedAt: time.UnixMilli(entry.CreatedAt).Format(
+				time.RFC3339,
+			),
+			Results: make([]FuzzRequestResult, 0),
 		}
 
-		if entry.Requests != nil {
-			output.HasMore = entry.Requests.PageInfo.HasNextPage
-			output.NextCursor = entry.Requests.PageInfo.EndCursor
+		reqEntry := reqResp.AutomateEntry
+		if reqEntry != nil && reqEntry.Requests != nil {
+			reqs := reqEntry.Requests
+			if reqs.PageInfo != nil && reqs.PageInfo.HasNextPage {
+				output.HasMore = true
+				if reqs.PageInfo.EndCursor != nil {
+					output.NextCursor = *reqs.PageInfo.EndCursor
+				}
+			}
 
-			for _, edge := range entry.Requests.Edges {
+			for _, edge := range reqs.Edges {
 				r := edge.Node
 
-				// Decode payloads
 				payloads := make([]string, 0, len(r.Payloads))
 				for _, p := range r.Payloads {
-					decoded, err := base64.StdEncoding.DecodeString(p.Raw)
-					if err == nil {
+					if p.Raw == nil {
+						continue
+					}
+					decoded, decErr := base64.StdEncoding.DecodeString(*p.Raw)
+					if decErr == nil {
 						payloads = append(payloads, string(decoded))
 					} else {
-						payloads = append(payloads, p.Raw) // fallback to raw
+						payloads = append(payloads, *p.Raw)
 					}
 				}
 
 				result := FuzzRequestResult{
-					SequenceID: r.SequenceID,
+					SequenceID: r.SequenceId,
 					Payloads:   payloads,
 					Error:      r.Error,
 				}
 
 				if r.Request != nil {
-					result.RequestID = r.Request.ID
+					result.RequestID = r.Request.Id
 					result.Method = r.Request.Method
-					result.URL = buildURL(r.Request.IsTLS, r.Request.Host, r.Request.Port, r.Request.Path, r.Request.Query)
+					result.URL = buildURL(
+						r.Request.IsTls, r.Request.Host,
+						r.Request.Port, r.Request.Path,
+						r.Request.Query,
+					)
 					if r.Request.Response != nil {
 						result.StatusCode = r.Request.Response.StatusCode
 						result.RoundtripMs = r.Request.Response.RoundtripTime
@@ -114,7 +154,9 @@ func getAutomateEntryHandler(client *caido.Client) func(context.Context, *mcp.Ca
 }
 
 // RegisterGetAutomateEntryTool registers the tool with the MCP server
-func RegisterGetAutomateEntryTool(server *mcp.Server, client *caido.Client) {
+func RegisterGetAutomateEntryTool(
+	server *mcp.Server, client *caido.Client,
+) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "caido_get_automate_entry",
 		Description: `Get fuzz results. Returns sequenceId/payloads/requestId/statusCode. Use limit/after for pagination.`,

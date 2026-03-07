@@ -4,7 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/c0tton-fluff/caido-mcp-server/internal/caido"
+	caido "github.com/caido-community/sdk-go"
+	gen "github.com/caido-community/sdk-go/graphql"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -26,13 +27,23 @@ type CreateFindingOutput struct {
 }
 
 // createFindingHandler creates the handler function
-func createFindingHandler(client *caido.Client) func(context.Context, *mcp.CallToolRequest, CreateFindingInput) (*mcp.CallToolResult, CreateFindingOutput, error) {
-	return func(ctx context.Context, req *mcp.CallToolRequest, input CreateFindingInput) (*mcp.CallToolResult, CreateFindingOutput, error) {
+func createFindingHandler(
+	client *caido.Client,
+) func(context.Context, *mcp.CallToolRequest, CreateFindingInput) (*mcp.CallToolResult, CreateFindingOutput, error) {
+	return func(
+		ctx context.Context,
+		req *mcp.CallToolRequest,
+		input CreateFindingInput,
+	) (*mcp.CallToolResult, CreateFindingOutput, error) {
 		if input.RequestID == "" {
-			return nil, CreateFindingOutput{}, fmt.Errorf("requestId is required")
+			return nil, CreateFindingOutput{}, fmt.Errorf(
+				"requestId is required",
+			)
 		}
 		if input.Title == "" {
-			return nil, CreateFindingOutput{}, fmt.Errorf("title is required")
+			return nil, CreateFindingOutput{}, fmt.Errorf(
+				"title is required",
+			)
 		}
 
 		reporter := input.Reporter
@@ -40,31 +51,41 @@ func createFindingHandler(client *caido.Client) func(context.Context, *mcp.CallT
 			reporter = "Claude"
 		}
 
-		findingInput := caido.CreateFindingInput{
-			Title:       input.Title,
-			Description: input.Description,
-			Reporter:    reporter,
-		}
-
-		finding, err := client.CreateFinding(ctx, input.RequestID, findingInput)
+		resp, err := client.Findings.Create(
+			ctx,
+			input.RequestID,
+			&gen.CreateFindingInput{
+				Title:       input.Title,
+				Description: input.Description,
+				Reporter:    reporter,
+			},
+		)
 		if err != nil {
 			return nil, CreateFindingOutput{}, err
 		}
 
-		output := CreateFindingOutput{
-			ID:       finding.ID,
-			Title:    finding.Title,
-			Host:     finding.Host,
-			Path:     finding.Path,
-			Reporter: finding.Reporter,
+		payload := resp.CreateFinding
+		if payload.Error != nil {
+			return nil, CreateFindingOutput{}, fmt.Errorf(
+				"create finding failed",
+			)
 		}
 
-		return nil, output, nil
+		f := payload.Finding
+		return nil, CreateFindingOutput{
+			ID:       f.Id,
+			Title:    f.Title,
+			Host:     f.Host,
+			Path:     f.Path,
+			Reporter: f.Reporter,
+		}, nil
 	}
 }
 
 // RegisterCreateFindingTool registers the tool with the MCP server
-func RegisterCreateFindingTool(server *mcp.Server, client *caido.Client) {
+func RegisterCreateFindingTool(
+	server *mcp.Server, client *caido.Client,
+) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "caido_create_finding",
 		Description: `Create finding. Params: requestId, title, description (optional).`,

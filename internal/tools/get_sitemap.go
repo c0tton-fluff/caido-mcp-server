@@ -3,7 +3,8 @@ package tools
 import (
 	"context"
 
-	"github.com/c0tton-fluff/caido-mcp-server/internal/caido"
+	caido "github.com/caido-community/sdk-go"
+	gen "github.com/caido-community/sdk-go/graphql"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -29,46 +30,56 @@ type GetSitemapOutput struct {
 }
 
 // getSitemapHandler creates the handler function
-func getSitemapHandler(client *caido.Client) func(context.Context, *mcp.CallToolRequest, GetSitemapInput) (*mcp.CallToolResult, GetSitemapOutput, error) {
-	return func(ctx context.Context, req *mcp.CallToolRequest, input GetSitemapInput) (*mcp.CallToolResult, GetSitemapOutput, error) {
+func getSitemapHandler(
+	client *caido.Client,
+) func(context.Context, *mcp.CallToolRequest, GetSitemapInput) (*mcp.CallToolResult, GetSitemapOutput, error) {
+	return func(
+		ctx context.Context,
+		req *mcp.CallToolRequest,
+		input GetSitemapInput,
+	) (*mcp.CallToolResult, GetSitemapOutput, error) {
 		var entries []SitemapEntrySummary
 
 		if input.ParentID == "" {
-			// Get root entries (domains)
-			result, err := client.GetSitemapRootEntries(ctx)
+			resp, err := client.Sitemap.ListRootEntries(ctx, nil)
 			if err != nil {
 				return nil, GetSitemapOutput{}, err
 			}
 
-			for _, edge := range result.SitemapRootEntries.Edges {
+			for _, edge := range resp.SitemapRootEntries.Edges {
 				e := edge.Node
 				entries = append(entries, SitemapEntrySummary{
-					ID:             e.ID,
+					ID:             e.Id,
 					Label:          e.Label,
-					Kind:           e.Kind,
+					Kind:           string(e.Kind),
 					HasDescendants: e.HasDescendants,
 				})
 			}
 		} else {
-			// Get descendants of specified entry
-			result, err := client.GetSitemapDescendantEntries(ctx, input.ParentID)
+			resp, err := client.Sitemap.ListDescendantEntries(
+				ctx, input.ParentID,
+				gen.SitemapDescendantsDepthDirect,
+			)
 			if err != nil {
 				return nil, GetSitemapOutput{}, err
 			}
 
-			for _, edge := range result.SitemapDescendantEntries.Edges {
+			for _, edge := range resp.SitemapDescendantEntries.Edges {
 				e := edge.Node
 				summary := SitemapEntrySummary{
-					ID:             e.ID,
+					ID:             e.Id,
 					Label:          e.Label,
-					Kind:           e.Kind,
+					Kind:           string(e.Kind),
 					HasDescendants: e.HasDescendants,
 				}
 				if e.Request != nil {
-					summary.RequestID = &e.Request.ID
-					summary.Method = &e.Request.Method
+					id := e.Request.Id
+					method := e.Request.Method
+					summary.RequestID = &id
+					summary.Method = &method
 					if e.Request.Response != nil {
-						summary.StatusCode = &e.Request.Response.StatusCode
+						sc := e.Request.Response.StatusCode
+						summary.StatusCode = &sc
 					}
 				}
 				entries = append(entries, summary)
@@ -80,7 +91,9 @@ func getSitemapHandler(client *caido.Client) func(context.Context, *mcp.CallTool
 }
 
 // RegisterGetSitemapTool registers the tool with the MCP server
-func RegisterGetSitemapTool(server *mcp.Server, client *caido.Client) {
+func RegisterGetSitemapTool(
+	server *mcp.Server, client *caido.Client,
+) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "caido_get_sitemap",
 		Description: `Get sitemap. No params=root domains. parentId=children. Returns id/label/kind.`,

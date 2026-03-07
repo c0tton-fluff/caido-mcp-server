@@ -4,7 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/c0tton-fluff/caido-mcp-server/internal/caido"
+	caido "github.com/caido-community/sdk-go"
+	gen "github.com/caido-community/sdk-go/graphql"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -22,8 +23,14 @@ type CreateScopeOutput struct {
 }
 
 // createScopeHandler creates the handler function
-func createScopeHandler(client *caido.Client) func(context.Context, *mcp.CallToolRequest, CreateScopeInput) (*mcp.CallToolResult, CreateScopeOutput, error) {
-	return func(ctx context.Context, req *mcp.CallToolRequest, input CreateScopeInput) (*mcp.CallToolResult, CreateScopeOutput, error) {
+func createScopeHandler(
+	client *caido.Client,
+) func(context.Context, *mcp.CallToolRequest, CreateScopeInput) (*mcp.CallToolResult, CreateScopeOutput, error) {
+	return func(
+		ctx context.Context,
+		req *mcp.CallToolRequest,
+		input CreateScopeInput,
+	) (*mcp.CallToolResult, CreateScopeOutput, error) {
 		if input.Name == "" {
 			return nil, CreateScopeOutput{}, fmt.Errorf("name is required")
 		}
@@ -31,20 +38,41 @@ func createScopeHandler(client *caido.Client) func(context.Context, *mcp.CallToo
 			return nil, CreateScopeOutput{}, fmt.Errorf("allowlist is required")
 		}
 
-		scopeInput := caido.CreateScopeInput{
-			Name:      input.Name,
-			Allowlist: input.Allowlist,
-			Denylist:  input.Denylist,
+		denylist := input.Denylist
+		if denylist == nil {
+			denylist = []string{}
 		}
 
-		scope, err := client.CreateScope(ctx, scopeInput)
+		resp, err := client.Scopes.Create(ctx, &gen.CreateScopeInput{
+			Name:      input.Name,
+			Allowlist: input.Allowlist,
+			Denylist:  denylist,
+		})
 		if err != nil {
 			return nil, CreateScopeOutput{}, err
 		}
 
+		payload := resp.CreateScope
+		if payload.Error != nil {
+			errType := "unknown"
+			if payload.Error != nil {
+				if tn := (*payload.Error).GetTypename(); tn != nil {
+					errType = *tn
+				}
+			}
+			return nil, CreateScopeOutput{}, fmt.Errorf(
+				"create scope failed: %s", errType,
+			)
+		}
+		if payload.Scope == nil {
+			return nil, CreateScopeOutput{}, fmt.Errorf(
+				"create scope returned no scope",
+			)
+		}
+
 		return nil, CreateScopeOutput{
-			ID:   scope.ID,
-			Name: scope.Name,
+			ID:   payload.Scope.Id,
+			Name: payload.Scope.Name,
 		}, nil
 	}
 }
@@ -53,6 +81,9 @@ func createScopeHandler(client *caido.Client) func(context.Context, *mcp.CallToo
 func RegisterCreateScopeTool(server *mcp.Server, client *caido.Client) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "caido_create_scope",
-		Description: `Create scope. Params: name, allowlist (e.g. "*://example.com/*"), denylist.`,
+		Description: `Create scope. Params: name, allowlist, denylist. ` +
+			`Values are hostnames, not URLs. ` +
+			`Examples: "example.com", "*.example.com". ` +
+			`Do NOT include scheme (https://) or paths.`,
 	}, createScopeHandler(client))
 }

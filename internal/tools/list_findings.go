@@ -4,7 +4,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/c0tton-fluff/caido-mcp-server/internal/caido"
+	caido "github.com/caido-community/sdk-go"
+	gen "github.com/caido-community/sdk-go/graphql"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -12,7 +13,7 @@ import (
 type ListFindingsInput struct {
 	Limit  int    `json:"limit,omitempty" jsonschema:"Maximum number of findings to return (default 50)"`
 	After  string `json:"after,omitempty" jsonschema:"Cursor for pagination"`
-	Filter string `json:"filter,omitempty" jsonschema:"HTTPQL filter query"`
+	Reporter string `json:"reporter,omitempty" jsonschema:"Filter by reporter name"`
 }
 
 // FindingSummary is a summary of a finding
@@ -35,46 +36,68 @@ type ListFindingsOutput struct {
 }
 
 // listFindingsHandler creates the handler function
-func listFindingsHandler(client *caido.Client) func(context.Context, *mcp.CallToolRequest, ListFindingsInput) (*mcp.CallToolResult, ListFindingsOutput, error) {
-	return func(ctx context.Context, req *mcp.CallToolRequest, input ListFindingsInput) (*mcp.CallToolResult, ListFindingsOutput, error) {
+func listFindingsHandler(
+	client *caido.Client,
+) func(context.Context, *mcp.CallToolRequest, ListFindingsInput) (*mcp.CallToolResult, ListFindingsOutput, error) {
+	return func(
+		ctx context.Context,
+		req *mcp.CallToolRequest,
+		input ListFindingsInput,
+	) (*mcp.CallToolResult, ListFindingsOutput, error) {
 		limit := input.Limit
 		if limit <= 0 {
-			limit = 10 // Small default to save context
+			limit = 10
 		}
 		if limit > 100 {
 			limit = 100
 		}
 
-		opts := caido.ListFindingsOptions{
-			First:  limit,
-			After:  input.After,
-			Filter: input.Filter,
+		opts := &caido.ListFindingsOptions{
+			First: &limit,
+		}
+		if input.After != "" {
+			opts.After = &input.After
+		}
+		if input.Reporter != "" {
+			opts.Filter = &gen.FilterClauseFindingInput{
+				Reporter: &input.Reporter,
+			}
 		}
 
-		result, err := client.ListFindings(ctx, opts)
+		resp, err := client.Findings.List(ctx, opts)
 		if err != nil {
 			return nil, ListFindingsOutput{}, err
 		}
 
+		conn := resp.Findings
 		output := ListFindingsOutput{
-			Findings:   make([]FindingSummary, 0, len(result.Findings.Edges)),
-			HasMore:    result.Findings.PageInfo.HasNextPage,
-			NextCursor: result.Findings.PageInfo.EndCursor,
+			Findings: make(
+				[]FindingSummary, 0, len(conn.Edges),
+			),
 		}
 
-		for _, edge := range result.Findings.Edges {
+		if conn.PageInfo != nil && conn.PageInfo.HasNextPage {
+			output.HasMore = true
+			if conn.PageInfo.EndCursor != nil {
+				output.NextCursor = *conn.PageInfo.EndCursor
+			}
+		}
+
+		for _, edge := range conn.Edges {
 			f := edge.Node
 			summary := FindingSummary{
-				ID:          f.ID,
-				Title:       f.Title,
-				Host:        f.Host,
-				Path:        f.Path,
-				Reporter:    f.Reporter,
-				CreatedAt:   f.CreatedAt.Time().Format(time.RFC3339),
+				ID:       f.Id,
+				Title:    f.Title,
+				Host:     f.Host,
+				Path:     f.Path,
+				Reporter: f.Reporter,
+				CreatedAt: time.UnixMilli(f.CreatedAt).Format(
+					time.RFC3339,
+				),
 				Description: f.Description,
 			}
 			if f.Request != nil {
-				summary.RequestID = f.Request.ID
+				summary.RequestID = f.Request.Id
 			}
 			output.Findings = append(output.Findings, summary)
 		}
@@ -84,7 +107,9 @@ func listFindingsHandler(client *caido.Client) func(context.Context, *mcp.CallTo
 }
 
 // RegisterListFindingsTool registers the tool with the MCP server
-func RegisterListFindingsTool(server *mcp.Server, client *caido.Client) {
+func RegisterListFindingsTool(
+	server *mcp.Server, client *caido.Client,
+) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "caido_list_findings",
 		Description: `List security findings. Returns title/host/path/requestId.`,

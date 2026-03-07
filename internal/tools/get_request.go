@@ -5,20 +5,16 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/c0tton-fluff/caido-mcp-server/internal/caido"
+	caido "github.com/caido-community/sdk-go"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 // GetRequestInput is the input for the get_request tool
 type GetRequestInput struct {
-	// Request IDs to retrieve
-	IDs []string `json:"ids" jsonschema:"required,Request IDs"`
-	// Fields to include. Default: metadata only. Options: metadata, requestHeaders, requestBody, responseHeaders, responseBody
-	Include []string `json:"include,omitempty" jsonschema:"Fields to include (default: metadata only)"`
-	// Offset for body content (bytes to skip)
-	BodyOffset int `json:"bodyOffset,omitempty" jsonschema:"Body byte offset"`
-	// Limit for body content (default 2000 bytes)
-	BodyLimit int `json:"bodyLimit,omitempty" jsonschema:"Body byte limit (default 2000)"`
+	IDs        []string `json:"ids" jsonschema:"required,Request IDs"`
+	Include    []string `json:"include,omitempty" jsonschema:"Fields to include (default: metadata only)"`
+	BodyOffset int      `json:"bodyOffset,omitempty" jsonschema:"Body byte offset"`
+	BodyLimit  int      `json:"bodyLimit,omitempty" jsonschema:"Body byte limit (default 2000)"`
 }
 
 // GetRequestOutput is the output for a single request
@@ -43,11 +39,8 @@ type GetRequestBatchOutput struct {
 	Requests []GetRequestOutput `json:"requests"`
 }
 
-// shouldInclude checks if a field should be included
 func shouldInclude(include []string, field string) bool {
 	if len(include) == 0 {
-		// Only return metadata by default to save context tokens
-		// Use include=["requestHeaders","requestBody","responseHeaders","responseBody"] for full data
 		return field == "metadata"
 	}
 	for _, f := range include {
@@ -65,97 +58,157 @@ func includeRequiresRaw(include []string) bool {
 		shouldInclude(include, "responseBody")
 }
 
-// processRequest converts a caido.Request to GetRequestOutput with field selection
-func processRequest(request *caido.Request, include []string, bodyOffset, bodyLimit int) GetRequestOutput {
-	output := GetRequestOutput{
-		ID: request.ID,
-	}
+// getRequestHandler creates the handler function for the get_request tool
+func getRequestHandler(
+	client *caido.Client,
+) func(context.Context, *mcp.CallToolRequest, GetRequestInput) (*mcp.CallToolResult, any, error) {
+	return func(
+		ctx context.Context,
+		req *mcp.CallToolRequest,
+		input GetRequestInput,
+	) (*mcp.CallToolResult, any, error) {
+		if len(input.IDs) == 0 {
+			return nil, nil, fmt.Errorf(
+				"at least one request ID is required",
+			)
+		}
 
-	// Metadata
-	if shouldInclude(include, "metadata") || len(include) == 0 {
-		output.Method = request.Method
-		output.Host = request.Host
-		output.Port = request.Port
-		output.Path = request.Path
-		output.Query = request.Query
-		output.IsTLS = request.IsTLS
-		output.CreatedAt = request.CreatedAt.Time().Format(time.RFC3339)
-		if request.Response != nil {
-			output.StatusCode = request.Response.StatusCode
-			output.RoundtripMs = request.Response.RoundtripTime
+		include := input.Include
+		bodyLimit := input.BodyLimit
+		if bodyLimit == 0 {
+			bodyLimit = 2000
+		}
+
+		var results []GetRequestOutput
+		for _, id := range input.IDs {
+			var output GetRequestOutput
+			if includeRequiresRaw(include) {
+				output = processFullRequest(
+					ctx, client, id, include,
+					input.BodyOffset, bodyLimit,
+				)
+			} else {
+				output = processMetadataRequest(
+					ctx, client, id, include,
+				)
+			}
+			results = append(results, output)
+		}
+
+		if len(input.IDs) == 1 {
+			return nil, results[0], nil
+		}
+		return nil, GetRequestBatchOutput{Requests: results}, nil
+	}
+}
+
+func processMetadataRequest(
+	ctx context.Context,
+	client *caido.Client,
+	id string,
+	include []string,
+) GetRequestOutput {
+	resp, err := client.Requests.GetMetadata(ctx, id)
+	if err != nil {
+		return GetRequestOutput{
+			ID:    id,
+			Error: fmt.Sprintf("failed to get request: %v", err),
 		}
 	}
 
-	// Request headers/body
-	includeReqHeaders := shouldInclude(include, "requestHeaders")
-	includeReqBody := shouldInclude(include, "requestBody")
-	if includeReqHeaders || includeReqBody {
-		output.Request = parseHTTPMessage(request.Raw, includeReqHeaders, includeReqBody, bodyOffset, bodyLimit)
+	r := resp.Request
+	if r == nil {
+		return GetRequestOutput{
+			ID:    id,
+			Error: "request not found",
+		}
 	}
 
-	// Response headers/body
-	if request.Response != nil {
-		includeRespHeaders := shouldInclude(include, "responseHeaders")
-		includeRespBody := shouldInclude(include, "responseBody")
-		if includeRespHeaders || includeRespBody {
-			output.Response = parseHTTPMessage(request.Response.Raw, includeRespHeaders, includeRespBody, bodyOffset, bodyLimit)
+	output := GetRequestOutput{ID: r.Id}
+	if shouldInclude(include, "metadata") || len(include) == 0 {
+		output.Method = r.Method
+		output.Host = r.Host
+		output.Port = r.Port
+		output.Path = r.Path
+		output.Query = r.Query
+		output.IsTLS = r.IsTls
+		output.CreatedAt = time.UnixMilli(r.CreatedAt).Format(
+			time.RFC3339,
+		)
+		if r.Response != nil {
+			output.StatusCode = r.Response.StatusCode
+			output.RoundtripMs = r.Response.RoundtripTime
+		}
+	}
+	return output
+}
+
+func processFullRequest(
+	ctx context.Context,
+	client *caido.Client,
+	id string,
+	include []string,
+	bodyOffset, bodyLimit int,
+) GetRequestOutput {
+	resp, err := client.Requests.Get(ctx, id)
+	if err != nil {
+		return GetRequestOutput{
+			ID:    id,
+			Error: fmt.Sprintf("failed to get request: %v", err),
+		}
+	}
+
+	r := resp.Request
+	if r == nil {
+		return GetRequestOutput{
+			ID:    id,
+			Error: "request not found",
+		}
+	}
+
+	output := GetRequestOutput{ID: r.Id}
+	if shouldInclude(include, "metadata") || len(include) == 0 {
+		output.Method = r.Method
+		output.Host = r.Host
+		output.Port = r.Port
+		output.Path = r.Path
+		output.Query = r.Query
+		output.IsTLS = r.IsTls
+		output.CreatedAt = time.UnixMilli(r.CreatedAt).Format(
+			time.RFC3339,
+		)
+		if r.Response != nil {
+			output.StatusCode = r.Response.StatusCode
+			output.RoundtripMs = r.Response.RoundtripTime
+		}
+	}
+
+	inclReqH := shouldInclude(include, "requestHeaders")
+	inclReqB := shouldInclude(include, "requestBody")
+	if inclReqH || inclReqB {
+		output.Request = parseHTTPMessage(
+			r.Raw, inclReqH, inclReqB, bodyOffset, bodyLimit,
+		)
+	}
+
+	if r.Response != nil {
+		inclRespH := shouldInclude(include, "responseHeaders")
+		inclRespB := shouldInclude(include, "responseBody")
+		if inclRespH || inclRespB {
+			output.Response = parseHTTPMessage(
+				r.Response.Raw, inclRespH, inclRespB,
+				bodyOffset, bodyLimit,
+			)
 		}
 	}
 
 	return output
 }
 
-// getRequestHandler creates the handler function for the get_request tool
-func getRequestHandler(client *caido.Client) func(context.Context, *mcp.CallToolRequest, GetRequestInput) (*mcp.CallToolResult, any, error) {
-	return func(ctx context.Context, req *mcp.CallToolRequest, input GetRequestInput) (*mcp.CallToolResult, any, error) {
-		if len(input.IDs) == 0 {
-			return nil, nil, fmt.Errorf("at least one request ID is required")
-		}
-
-		include := input.Include
-
-		// Default body limit to save context tokens (2KB)
-		bodyLimit := input.BodyLimit
-		if bodyLimit == 0 {
-			bodyLimit = 2000
-		}
-
-		// Fetch requests
-		var results []GetRequestOutput
-		for _, id := range input.IDs {
-			var (
-				request *caido.Request
-				err     error
-			)
-			if includeRequiresRaw(include) {
-				request, err = client.GetRequest(ctx, id)
-			} else {
-				request, err = client.GetRequestMetadata(ctx, id)
-			}
-			if err != nil {
-				results = append(results, GetRequestOutput{
-					ID:    id,
-					Error: fmt.Sprintf("failed to get request: %v", err),
-				})
-				continue
-			}
-
-			output := processRequest(request, include, input.BodyOffset, bodyLimit)
-			results = append(results, output)
-		}
-
-		// Return single object for single request
-		if len(input.IDs) == 1 {
-			return nil, results[0], nil
-		}
-
-		// Return batch response
-		return nil, GetRequestBatchOutput{Requests: results}, nil
-	}
-}
-
 // RegisterGetRequestTool registers the tool with the MCP server
-func RegisterGetRequestTool(server *mcp.Server, client *caido.Client) {
+func RegisterGetRequestTool(
+	server *mcp.Server, client *caido.Client,
+) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "caido_get_request",
 		Description: `Get request details. Default: metadata only (saves tokens). Use include=[requestHeaders,requestBody,responseHeaders,responseBody] for more. Body limit: 2KB default.`,

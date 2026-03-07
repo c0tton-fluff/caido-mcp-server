@@ -3,7 +3,7 @@ package tools
 import (
 	"context"
 
-	"github.com/c0tton-fluff/caido-mcp-server/internal/caido"
+	caido "github.com/caido-community/sdk-go"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -25,20 +25,26 @@ type ListScopesOutput struct {
 }
 
 // listScopesHandler creates the handler function
-func listScopesHandler(client *caido.Client) func(context.Context, *mcp.CallToolRequest, ListScopesInput) (*mcp.CallToolResult, ListScopesOutput, error) {
-	return func(ctx context.Context, req *mcp.CallToolRequest, input ListScopesInput) (*mcp.CallToolResult, ListScopesOutput, error) {
-		result, err := client.ListScopes(ctx)
+func listScopesHandler(
+	client *caido.Client,
+) func(context.Context, *mcp.CallToolRequest, ListScopesInput) (*mcp.CallToolResult, ListScopesOutput, error) {
+	return func(
+		ctx context.Context,
+		req *mcp.CallToolRequest,
+		input ListScopesInput,
+	) (*mcp.CallToolResult, ListScopesOutput, error) {
+		resp, err := client.Scopes.List(ctx)
 		if err != nil {
 			return nil, ListScopesOutput{}, err
 		}
 
 		output := ListScopesOutput{
-			Scopes: make([]ScopeSummary, 0, len(result.Scopes)),
+			Scopes: make([]ScopeSummary, 0, len(resp.Scopes)),
 		}
 
-		for _, s := range result.Scopes {
+		for _, s := range resp.Scopes {
 			output.Scopes = append(output.Scopes, ScopeSummary{
-				ID:        s.ID,
+				ID:        s.Id,
 				Name:      s.Name,
 				Allowlist: s.Allowlist,
 				Denylist:  s.Denylist,

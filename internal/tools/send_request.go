@@ -56,12 +56,6 @@ func pollForResponse(
 	previousEntryID string,
 ) (*gen.GetReplayEntryReplayEntry, error) {
 	for i := 0; i < pollMaxRetries; i++ {
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		case <-time.After(pollInterval):
-		}
-
 		sessResp, err := client.Replay.GetSession(ctx, sessionID)
 		if err != nil {
 			return nil, fmt.Errorf("polling failed: %w", err)
@@ -88,6 +82,12 @@ func pollForResponse(
 			entry.Request != nil &&
 			entry.Request.Response != nil {
 			return entry, nil
+		}
+
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(pollInterval):
 		}
 	}
 	return nil, fmt.Errorf(

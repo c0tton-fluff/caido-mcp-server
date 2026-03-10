@@ -151,7 +151,9 @@ func sendRequestHandler(
 		}
 
 		// Normalize line endings
-		raw := strings.ReplaceAll(input.Raw, "\r\n", "\n")
+		// Handle literal \r\n escape sequences that LLMs commonly produce
+		raw := strings.ReplaceAll(input.Raw, `\r\n`, "\n")
+		raw = strings.ReplaceAll(raw, "\r\n", "\n")
 		raw = strings.ReplaceAll(raw, "\n", "\r\n")
 		if !strings.HasSuffix(raw, "\r\n\r\n") {
 			if strings.HasSuffix(raw, "\r\n") {

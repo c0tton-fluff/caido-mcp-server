@@ -191,11 +191,17 @@ func (a *Authenticator) waitForToken(
 		)
 	}
 
-	header := http.Header{}
+	// sdk-go returns http/https scheme; gorilla requires ws/wss
 	originScheme := "http"
-	if u.Scheme == "wss" {
+	switch u.Scheme {
+	case "https", "wss":
+		u.Scheme = "wss"
 		originScheme = "https"
+	default:
+		u.Scheme = "ws"
 	}
+
+	header := http.Header{}
 	header.Set(
 		"Origin",
 		fmt.Sprintf("%s://%s", originScheme, u.Host),
@@ -205,7 +211,7 @@ func (a *Authenticator) waitForToken(
 	)
 
 	conn, _, err := websocket.DefaultDialer.DialContext(
-		ctx, wsEndpoint, header,
+		ctx, u.String(), header,
 	)
 	if err != nil {
 		return nil, fmt.Errorf(

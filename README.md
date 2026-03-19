@@ -5,7 +5,7 @@
 <h1 align="center">caido-mcp-server</h1>
 
 <p align="center">
-  MCP server and CLI for <a href="https://caido.io">Caido</a> web proxy -- browse, replay, and analyze HTTP traffic from AI assistants or your terminal.
+  MCP server and CLI for <a href="https://caido.io">Caido</a> web proxy - browse, replay, and analyze HTTP traffic from AI assistants or your terminal.
 </p>
 
 <p align="center">
@@ -21,8 +21,8 @@
 
 Two ways to interact with your Caido proxy:
 
-- **MCP Server** -- expose Caido tools to AI assistants (Claude Code, Cursor, etc.) via the Model Context Protocol
-- **CLI** -- standalone terminal client for pentesters who prefer the command line
+- **MCP Server** - expose Caido tools to AI assistants (Claude Code, Cursor, etc.) via the Model Context Protocol
+- **CLI** - standalone terminal client for pentesters who prefer the command line
 
 Both share the same auth token, the same Go SDK, and the same codebase.
 
@@ -44,10 +44,10 @@ Both share the same auth token, the same Go SDK, and the same codebase.
 
 **Built-in optimizations:**
 
-- Token auto-refresh -- expired tokens refresh mid-session automatically
-- Session reuse -- single replay session per server lifetime, no sprawl
-- Body limits -- response bodies capped at 2KB by default to save LLM context
-- Minimal tool descriptions -- optimized for low token overhead per API call
+- Token auto-refresh - expired tokens refresh mid-session automatically
+- Session reuse - single replay session per server lifetime, no sprawl
+- Body limits - response bodies capped at 2KB by default to save LLM context
+- Minimal tool descriptions - optimized for low token overhead per API call
 
 ---
 
@@ -59,7 +59,7 @@ Both share the same auth token, the same Go SDK, and the same codebase.
 curl -fsSL https://raw.githubusercontent.com/c0tton-fluff/caido-mcp-server/main/install.sh | bash
 ```
 
-Or download a pre-built binary from [Releases](https://github.com/c0tton-fluff/caido-mcp-server/releases) (macOS, Linux, Windows -- amd64/arm64).
+Or download a pre-built binary from [Releases](https://github.com/c0tton-fluff/caido-mcp-server/releases) (macOS, Linux, Windows - amd64/arm64).
 
 <details>
 <summary>Build from source</summary>
@@ -215,7 +215,7 @@ Add to `~/.mcp.json` (Claude Code) or your editor's MCP config:
 
 ## CLI
 
-Standalone terminal client for Caido. No MCP required -- use it directly from your shell.
+Standalone terminal client for Caido. No MCP required - use it directly from your shell.
 
 ### Install
 
@@ -238,7 +238,7 @@ go build -o caido-cli ./cmd/cli
 
 ### Usage
 
-Requires the same auth token as the MCP server -- run `caido-mcp-server login` first.
+Requires the same auth token as the MCP server - run `caido-mcp-server login` first.
 
 ```bash
 # Check connection and auth

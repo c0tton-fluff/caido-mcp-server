@@ -62,8 +62,13 @@ func (s *TokenStore) Save(token *StoredToken) error {
 		return fmt.Errorf("failed to marshal token: %w", err)
 	}
 
-	if err := os.WriteFile(s.tokenFilePath(), data, filePermission); err != nil {
+	tmpPath := s.tokenFilePath() + ".tmp"
+	if err := os.WriteFile(tmpPath, data, filePermission); err != nil {
 		return fmt.Errorf("failed to write token file: %w", err)
+	}
+	if err := os.Rename(tmpPath, s.tokenFilePath()); err != nil {
+		os.Remove(tmpPath)
+		return fmt.Errorf("failed to rename token file: %w", err)
 	}
 
 	return nil

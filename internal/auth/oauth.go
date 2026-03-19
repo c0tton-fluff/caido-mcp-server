@@ -368,8 +368,17 @@ func ParseExpiresAt(s string) time.Time {
 
 // openBrowser opens the default browser to the given URL
 func openBrowser(rawURL string) error {
-	var cmd *exec.Cmd
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return fmt.Errorf("invalid URL: %w", err)
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return fmt.Errorf(
+			"refused to open non-HTTP URL: %s", u.Scheme,
+		)
+	}
 
+	var cmd *exec.Cmd
 	switch runtime.GOOS {
 	case "darwin":
 		cmd = exec.Command("open", rawURL)

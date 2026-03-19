@@ -1,6 +1,6 @@
 # caido-mcp-server
 
-[![Go](https://img.shields.io/badge/Go-1.23+-00ADD8?logo=go&logoColor=white)](https://go.dev)
+[![Go](https://img.shields.io/badge/Go-1.24+-00ADD8?logo=go&logoColor=white)](https://go.dev)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Release](https://img.shields.io/github/v/release/c0tton-fluff/caido-mcp-server)](https://github.com/c0tton-fluff/caido-mcp-server/releases)
 
@@ -45,7 +45,7 @@ Or download from [Releases](https://github.com/c0tton-fluff/caido-mcp-server/rel
 ```bash
 git clone https://github.com/c0tton-fluff/caido-mcp-server.git
 cd caido-mcp-server
-go build -o caido-mcp-server .
+go build -o caido-mcp-server ./cmd/mcp
 ```
 </details>
 
@@ -195,9 +195,9 @@ Or download from [Releases](https://github.com/c0tton-fluff/caido-mcp-server/rel
 <summary>Build from source</summary>
 
 ```bash
-cd Caido-CLI
-go build -o caido-cli .
-mv caido-cli /usr/local/bin/
+git clone https://github.com/c0tton-fluff/caido-mcp-server.git
+cd caido-mcp-server
+go build -o caido-cli ./cmd/cli
 ```
 </details>
 

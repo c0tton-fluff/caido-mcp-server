@@ -26,7 +26,7 @@ type createTamperRuleGQLInput struct {
 	Name         string         `json:"name"`
 	Section      map[string]any `json:"section"`
 	Condition    *string        `json:"condition,omitempty"`
-	Sources      []gen.Source   `json:"sources,omitempty"`
+	Sources      []gen.Source   `json:"sources"`
 }
 
 type createTamperRuleResp struct {

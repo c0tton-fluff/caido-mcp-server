@@ -10,37 +10,23 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// tamperSectionOmit mirrors gen.TamperSectionInput with omitempty
-// on all fields. Required because TamperSectionInput is a GraphQL
-// oneof: only one field may be set and the rest must be omitted
-// (not null). genqlient v0.8.1 with use_struct_references:false
-// drops omitempty from nullable struct pointers.
-type tamperSectionOmit struct {
-	RequestAll         *gen.TamperSectionRequestAllInput         `json:"requestAll,omitempty"`
-	RequestBody        *gen.TamperSectionRequestBodyInput        `json:"requestBody,omitempty"`
-	RequestFirstLine   *gen.TamperSectionRequestFirstLineInput   `json:"requestFirstLine,omitempty"`
-	RequestHeader      *gen.TamperSectionRequestHeaderInput      `json:"requestHeader,omitempty"`
-	RequestMethod      *gen.TamperSectionRequestMethodInput      `json:"requestMethod,omitempty"`
-	RequestPath        *gen.TamperSectionRequestPathInput        `json:"requestPath,omitempty"`
-	RequestQuery       *gen.TamperSectionRequestQueryInput       `json:"requestQuery,omitempty"`
-	RequestSNI         *gen.TamperSectionRequestSNIInput         `json:"requestSNI,omitempty"`
-	ResponseAll        *gen.TamperSectionResponseAllInput        `json:"responseAll,omitempty"`
-	ResponseBody       *gen.TamperSectionResponseBodyInput       `json:"responseBody,omitempty"`
-	ResponseFirstLine  *gen.TamperSectionResponseFirstLineInput  `json:"responseFirstLine,omitempty"`
-	ResponseHeader     *gen.TamperSectionResponseHeaderInput     `json:"responseHeader,omitempty"`
-	ResponseStatusCode *gen.TamperSectionResponseStatusCodeInput `json:"responseStatusCode,omitempty"`
-}
-
+// createTamperRuleVars is the raw GraphQL variable wrapper.
+// We use map[string]any for section because TamperSectionInput
+// and its nested operation/matcher/replacer types are all GraphQL
+// oneofs. genqlient v0.8.1 drops omitempty from nullable pointer
+// fields, causing unset oneof variants to serialize as null.
+// Maps only include keys we set, avoiding oneof violations at
+// every nesting level.
 type createTamperRuleVars struct {
 	Input createTamperRuleGQLInput `json:"input"`
 }
 
 type createTamperRuleGQLInput struct {
-	CollectionId string            `json:"collectionId"`
-	Name         string            `json:"name"`
-	Section      tamperSectionOmit `json:"section"`
-	Condition    *string           `json:"condition,omitempty"`
-	Sources      []gen.Source      `json:"sources,omitempty"`
+	CollectionId string         `json:"collectionId"`
+	Name         string         `json:"name"`
+	Section      map[string]any `json:"section"`
+	Condition    *string        `json:"condition,omitempty"`
+	Sources      []gen.Source   `json:"sources,omitempty"`
 }
 
 type createTamperRuleResp struct {
@@ -100,7 +86,7 @@ func createTamperRuleHandler(
 			)
 		}
 
-		section, err := buildTamperSectionOmit(
+		section, err := buildTamperSectionMap(
 			input.Section, input.Match, input.Replace,
 		)
 		if err != nil {
@@ -155,83 +141,77 @@ func createTamperRuleHandler(
 	}
 }
 
-// buildTamperSectionOmit constructs a tamperSectionOmit from the
-// section name and optional match/replace strings. Uses the omitempty
-// wrapper to avoid serializing unset oneof variants as null.
-func buildTamperSectionOmit(
+// buildTamperSectionMap constructs the section input as a map.
+// Every nested type in the tamper section chain is a GraphQL oneof
+// (section, operation, matcher, replacer). Using maps ensures only
+// the chosen variant is serialized -- no null fields for unset
+// variants at any nesting level.
+func buildTamperSectionMap(
 	section, match, replace string,
-) (tamperSectionOmit, error) {
-	matcher := gen.TamperMatcherRawInput{
-		Regex: &gen.TamperMatcherRegexInput{Regex: match},
+) (map[string]any, error) {
+	matcher := map[string]any{
+		"regex": map[string]any{"regex": match},
 	}
-	replacer := gen.TamperReplacerInput{
-		Term: &gen.TamperReplacerTermInput{Term: replace},
+	replacer := map[string]any{
+		"term": map[string]any{"term": replace},
+	}
+	rawOp := map[string]any{
+		"raw": map[string]any{
+			"matcher":  matcher,
+			"replacer": replacer,
+		},
 	}
 
-	rawOp := func() *gen.TamperOperationAllRawInput {
-		return &gen.TamperOperationAllRawInput{
-			Matcher: matcher, Replacer: replacer,
-		}
-	}
-	bodyOp := func() *gen.TamperOperationBodyRawInput {
-		return &gen.TamperOperationBodyRawInput{
-			Matcher: matcher, Replacer: replacer,
-		}
-	}
-	headerOp := func() *gen.TamperOperationHeaderRawInput {
-		return &gen.TamperOperationHeaderRawInput{
-			Matcher: matcher, Replacer: replacer,
+	wrap := func(key string, op map[string]any) map[string]any {
+		return map[string]any{
+			key: map[string]any{"operation": op},
 		}
 	}
 
-	var s tamperSectionOmit
 	switch section {
 	case "requestAll":
-		s.RequestAll = &gen.TamperSectionRequestAllInput{
-			Operation: gen.TamperOperationAllInput{Raw: rawOp()},
-		}
+		return wrap("requestAll", rawOp), nil
 	case "requestHeader":
-		s.RequestHeader = &gen.TamperSectionRequestHeaderInput{
-			Operation: gen.TamperOperationHeaderInput{Raw: headerOp()},
-		}
+		return wrap("requestHeader", rawOp), nil
 	case "requestBody":
-		s.RequestBody = &gen.TamperSectionRequestBodyInput{
-			Operation: gen.TamperOperationBodyInput{Raw: bodyOp()},
-		}
+		return wrap("requestBody", rawOp), nil
 	case "requestPath":
-		s.RequestPath = &gen.TamperSectionRequestPathInput{}
+		return wrap("requestPath", rawOp), nil
 	case "requestQuery":
-		s.RequestQuery = &gen.TamperSectionRequestQueryInput{}
+		return wrap("requestQuery", rawOp), nil
 	case "requestMethod":
-		s.RequestMethod = &gen.TamperSectionRequestMethodInput{}
+		return wrap("requestMethod", map[string]any{
+			"update": map[string]any{
+				"matcher":  matcher,
+				"replacer": replacer,
+			},
+		}), nil
 	case "requestFirstLine":
-		s.RequestFirstLine = &gen.TamperSectionRequestFirstLineInput{}
+		return wrap("requestFirstLine", rawOp), nil
 	case "requestSNI":
-		s.RequestSNI = &gen.TamperSectionRequestSNIInput{}
+		return wrap("requestSNI", rawOp), nil
 	case "responseAll":
-		s.ResponseAll = &gen.TamperSectionResponseAllInput{
-			Operation: gen.TamperOperationAllInput{Raw: rawOp()},
-		}
+		return wrap("responseAll", rawOp), nil
 	case "responseHeader":
-		s.ResponseHeader = &gen.TamperSectionResponseHeaderInput{
-			Operation: gen.TamperOperationHeaderInput{Raw: headerOp()},
-		}
+		return wrap("responseHeader", rawOp), nil
 	case "responseBody":
-		s.ResponseBody = &gen.TamperSectionResponseBodyInput{
-			Operation: gen.TamperOperationBodyInput{Raw: bodyOp()},
-		}
+		return wrap("responseBody", rawOp), nil
 	case "responseFirstLine":
-		s.ResponseFirstLine = &gen.TamperSectionResponseFirstLineInput{}
+		return wrap("responseFirstLine", rawOp), nil
 	case "responseStatusCode":
-		s.ResponseStatusCode = &gen.TamperSectionResponseStatusCodeInput{}
+		return wrap("responseStatusCode", map[string]any{
+			"update": map[string]any{
+				"matcher":  matcher,
+				"replacer": replacer,
+			},
+		}), nil
 	default:
-		return s, fmt.Errorf(
+		return nil, fmt.Errorf(
 			"unknown section %q: use requestAll, requestHeader, "+
 				"requestBody, responseAll, responseHeader, responseBody, "+
 				"or other supported sections", section,
 		)
 	}
-	return s, nil
 }
 
 // RegisterCreateTamperRuleTool registers the tool

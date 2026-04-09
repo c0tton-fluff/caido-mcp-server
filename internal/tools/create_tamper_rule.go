@@ -32,6 +32,17 @@ func createTamperRuleHandler(
 		req *mcp.CallToolRequest,
 		input CreateTamperRuleInput,
 	) (*mcp.CallToolResult, CreateTamperRuleOutput, error) {
+		if len(input.Name) > 200 {
+			return nil, CreateTamperRuleOutput{}, fmt.Errorf(
+				"name exceeds max length of 200",
+			)
+		}
+		if input.Condition != nil && len(*input.Condition) > 10000 {
+			return nil, CreateTamperRuleOutput{}, fmt.Errorf(
+				"condition exceeds max length of 10000",
+			)
+		}
+
 		sources := make([]gen.Source, 0, len(input.Sources))
 		for _, s := range input.Sources {
 			sources = append(sources, gen.Source(s))

@@ -34,8 +34,18 @@ func createScopeHandler(
 		if input.Name == "" {
 			return nil, CreateScopeOutput{}, fmt.Errorf("name is required")
 		}
+		if len(input.Name) > 200 {
+			return nil, CreateScopeOutput{}, fmt.Errorf(
+				"name exceeds max length of 200",
+			)
+		}
 		if len(input.Allowlist) == 0 {
 			return nil, CreateScopeOutput{}, fmt.Errorf("allowlist is required")
+		}
+		if len(input.Allowlist) > 100 {
+			return nil, CreateScopeOutput{}, fmt.Errorf(
+				"allowlist exceeds max of 100 entries",
+			)
 		}
 
 		denylist := input.Denylist

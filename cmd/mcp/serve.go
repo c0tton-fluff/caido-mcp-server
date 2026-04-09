@@ -44,22 +44,35 @@ func runServe(cmd *cobra.Command, args []string) error {
 		cancel()
 	}()
 
-	client, err := caido.NewClient(
-		caido.Options{URL: caidoURL},
-	)
-	if err != nil {
-		return fmt.Errorf("failed to create client: %w", err)
-	}
+	var client *caido.Client
 
-	token, tokenStore, err := getTokenAndStore(ctx, client)
-	if err != nil {
-		return err
-	}
-	client.SetAccessToken(token)
+	pat := os.Getenv("CAIDO_PAT")
+	if pat != "" {
+		client, err = caido.NewClient(caido.Options{
+			URL:  caidoURL,
+			Auth: caido.PATAuth(pat),
+		})
+		if err != nil {
+			return fmt.Errorf("failed to create client: %w", err)
+		}
+	} else {
+		client, err = caido.NewClient(
+			caido.Options{URL: caidoURL},
+		)
+		if err != nil {
+			return fmt.Errorf("failed to create client: %w", err)
+		}
 
-	client.SetTokenRefresher(
-		makeTokenRefresher(client, tokenStore),
-	)
+		token, tokenStore, err := getTokenAndStore(ctx, client)
+		if err != nil {
+			return err
+		}
+		client.SetAccessToken(token)
+
+		client.SetTokenRefresher(
+			makeTokenRefresher(client, tokenStore),
+		)
+	}
 
 	server := mcp.NewServer(
 		&mcp.Implementation{

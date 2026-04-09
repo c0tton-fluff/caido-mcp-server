@@ -45,6 +45,16 @@ func createFindingHandler(
 				"title is required",
 			)
 		}
+		if len(input.Title) > 500 {
+			return nil, CreateFindingOutput{}, fmt.Errorf(
+				"title exceeds max length of 500",
+			)
+		}
+		if input.Description != nil && len(*input.Description) > 10000 {
+			return nil, CreateFindingOutput{}, fmt.Errorf(
+				"description exceeds max length of 10000",
+			)
+		}
 
 		reporter := input.Reporter
 		if reporter == "" {

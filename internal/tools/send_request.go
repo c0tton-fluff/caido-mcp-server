@@ -52,6 +52,11 @@ func sendRequestHandler(
 				"raw HTTP request is required",
 			)
 		}
+		if len(input.Raw) > 1048576 {
+			return nil, SendRequestOutput{}, fmt.Errorf(
+				"raw request exceeds max length of 1MB",
+			)
+		}
 
 		raw := httputil.NormalizeCRLF(input.Raw)
 

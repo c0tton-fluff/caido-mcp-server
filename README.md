@@ -44,9 +44,11 @@ Both share the same auth token, the same Go SDK, and the same codebase.
 | **Filters** | List saved HTTPQL filter presets |
 | **Instance** | Get Caido version and platform info |
 
-**Built-in optimizations:**
+**Built-in security and performance:**
 
-- Token auto-refresh - expired tokens refresh mid-session automatically
+- Credential redaction - Authorization, Cookie, and API key headers are redacted in tool output
+- Input validation - length limits on all string inputs to prevent context flooding
+- Token auto-refresh - expired OAuth tokens refresh mid-session automatically
 - Session reuse - single replay session per server lifetime, no sprawl
 - Body limits - response bodies capped at 2KB by default to save LLM context
 - Minimal tool descriptions - optimized for low token overhead per API call
@@ -76,17 +78,32 @@ go build -ldflags "-X main.version=$(git describe --tags)" -o caido-mcp-server .
 
 ### Quick Start
 
-**1. Authenticate**
+**Option A: Personal Access Token (recommended)**
+
+Generate a PAT in Caido (Settings > Developer > Personal Access Tokens) and pass it via environment variable. No login command needed.
+
+```json
+{
+  "mcpServers": {
+    "caido": {
+      "command": "caido-mcp-server",
+      "args": ["serve"],
+      "env": {
+        "CAIDO_URL": "http://127.0.0.1:8080",
+        "CAIDO_PAT": "your-personal-access-token"
+      }
+    }
+  }
+}
+```
+
+**Option B: OAuth device flow**
 
 ```bash
 CAIDO_URL=http://localhost:8080 caido-mcp-server login
 ```
 
-This opens your browser for OAuth device-flow authentication and saves the token to `~/.caido-mcp/token.json`.
-
-**2. Configure your MCP client**
-
-Add to `~/.mcp.json` (Claude Code) or your editor's MCP config:
+This opens your browser for OAuth authentication and saves the token to `~/.caido-mcp/token.json`. Then configure your MCP client:
 
 ```json
 {
@@ -349,7 +366,7 @@ go build -o caido-cli ./cmd/cli
 
 ### Usage
 
-Requires the same auth token as the MCP server - run `caido-mcp-server login` first.
+Requires authentication - either set `CAIDO_PAT` env var or run `caido-mcp-server login` first.
 
 ```bash
 # Check connection and auth
@@ -407,7 +424,7 @@ caido-mcp-server/
     mcp/          MCP server (stdio transport)
     cli/          Standalone CLI
   internal/
-    auth/         OAuth device flow, token store, auto-refresh
+    auth/         OAuth device flow, PAT support, token store, auto-refresh
     httputil/     HTTP parsing, CRLF normalization, URL handling
     replay/       Replay session management, response polling
     tools/        MCP tool definitions (one file per tool)
@@ -421,12 +438,22 @@ Both `cmd/mcp` and `cmd/cli` share `internal/` packages. The project uses [caido
 
 | Error | Fix |
 |-------|-----|
-| `Invalid token` | Run `caido-mcp-server login` again |
-| `token expired, no refresh token` | Re-login -- token store has no refresh token |
+| `Invalid token` | Check `CAIDO_PAT` value or run `caido-mcp-server login` again |
+| `token expired, no refresh token` | Use PAT auth instead, or re-login |
 | `poll failed: timed out` | Target server slow; use `get_replay_entry` with the returned `entryId` |
-| `no authentication token found` | Run `caido-mcp-server login` before `serve` |
+| `no authentication token found` | Set `CAIDO_PAT` env var or run `caido-mcp-server login` before `serve` |
 
 MCP server logs: `~/.cache/claude-cli-nodejs/*/mcp-logs-caido/`
+
+---
+
+## Security
+
+Sensitive HTTP headers (Authorization, Cookie, Set-Cookie, API keys) are automatically redacted in all tool output to prevent credential leakage to LLM context. All string inputs are length-validated server-side. Request batch sizes are capped.
+
+PAT tokens and OAuth tokens are stored with 0600 permissions and never appear in process arguments or log output.
+
+To report a security issue, open a GitHub issue or contact the maintainer directly.
 
 ---
 

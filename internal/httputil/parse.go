@@ -10,6 +10,19 @@ import (
 
 const DefaultBodyLimit = 2000
 
+// sensitiveHeaders are redacted in tool output to prevent
+// leaking credentials to the LLM context.
+var sensitiveHeaders = map[string]bool{
+	"authorization":       true,
+	"cookie":              true,
+	"set-cookie":          true,
+	"proxy-authorization": true,
+	"x-api-key":           true,
+	"x-auth-token":        true,
+	"x-csrf-token":        true,
+	"x-xsrf-token":        true,
+}
+
 type Header struct {
 	Name  string `json:"name"`
 	Value string `json:"value"`
@@ -64,9 +77,14 @@ func ParseRaw(
 			line = strings.TrimSpace(line)
 			if line != "" {
 				if idx := strings.Index(line, ":"); idx > 0 {
+					name := strings.TrimSpace(line[:idx])
+					value := strings.TrimSpace(line[idx+1:])
+					if sensitiveHeaders[strings.ToLower(name)] {
+						value = "[REDACTED]"
+					}
 					result.Headers = append(result.Headers, Header{
-						Name:  strings.TrimSpace(line[:idx]),
-						Value: strings.TrimSpace(line[idx+1:]),
+						Name:  name,
+						Value: value,
 					})
 				}
 			}

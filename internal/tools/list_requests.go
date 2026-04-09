@@ -40,6 +40,12 @@ func listRequestsHandler(
 		req *mcp.CallToolRequest,
 		input ListRequestsInput,
 	) (*mcp.CallToolResult, ListRequestsOutput, error) {
+		if len(input.HTTPQL) > 10000 {
+			return nil, ListRequestsOutput{}, fmt.Errorf(
+				"httpql exceeds max length of 10000",
+			)
+		}
+
 		limit := input.Limit
 		if limit <= 0 {
 			limit = 20

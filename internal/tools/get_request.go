@@ -73,6 +73,11 @@ func getRequestHandler(
 				"at least one request ID is required",
 			)
 		}
+		if len(input.IDs) > 20 {
+			return nil, nil, fmt.Errorf(
+				"max 20 request IDs per call",
+			)
+		}
 
 		include := input.Include
 		bodyLimit := input.BodyLimit

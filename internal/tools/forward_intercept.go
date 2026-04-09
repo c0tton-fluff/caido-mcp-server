@@ -33,6 +33,11 @@ func forwardInterceptHandler(
 				"id is required",
 			)
 		}
+		if len(input.Raw) > 1048576 {
+			return nil, ForwardInterceptOutput{}, fmt.Errorf(
+				"raw request exceeds max length of 1MB",
+			)
+		}
 
 		var fwdInput *gen.ForwardInterceptMessageInput
 		if input.Raw != "" {

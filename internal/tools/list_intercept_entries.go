@@ -43,6 +43,12 @@ func listInterceptEntriesHandler(
 		req *mcp.CallToolRequest,
 		input ListInterceptEntriesInput,
 	) (*mcp.CallToolResult, ListInterceptEntriesOutput, error) {
+		if len(input.Filter) > 10000 {
+			return nil, ListInterceptEntriesOutput{}, fmt.Errorf(
+				"filter exceeds max length of 10000",
+			)
+		}
+
 		limit := input.Limit
 		if limit <= 0 {
 			limit = 20

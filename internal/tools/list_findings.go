@@ -11,8 +11,8 @@ import (
 
 // ListFindingsInput is the input for the list_findings tool
 type ListFindingsInput struct {
-	Limit  int    `json:"limit,omitempty" jsonschema:"Maximum number of findings to return (default 50)"`
-	After  string `json:"after,omitempty" jsonschema:"Cursor for pagination"`
+	Limit    int    `json:"limit,omitempty" jsonschema:"Maximum number of findings to return (default 50)"`
+	After    string `json:"after,omitempty" jsonschema:"Cursor for pagination"`
 	Reporter string `json:"reporter,omitempty" jsonschema:"Filter by reporter name"`
 }
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"strings"
 	"time"
@@ -242,12 +243,8 @@ func runBatchFile(cmd *cobra.Command, args []string) error {
 		}
 
 		hdrs := make(map[string]string)
-		for k, v := range spec.Base.Headers {
-			hdrs[k] = v
-		}
-		for k, v := range item.Headers {
-			hdrs[k] = v
-		}
+		maps.Copy(hdrs, spec.Base.Headers)
+		maps.Copy(hdrs, item.Headers)
 
 		authMode := spec.Base.AuthMode
 		if item.AuthMode != "" {
@@ -408,9 +405,7 @@ func getBody(cmd *cobra.Command, hdrs map[string]string) string {
 
 func copyHeaders(src map[string]string) map[string]string {
 	dst := make(map[string]string, len(src))
-	for k, v := range src {
-		dst[k] = v
-	}
+	maps.Copy(dst, src)
 	return dst
 }
 
@@ -453,7 +448,7 @@ func parseTokens(raw string) []tokenDef {
 	var tokens []tokenDef
 	autoIdx := 1
 
-	for _, p := range strings.Split(raw, ",") {
+	for p := range strings.SplitSeq(raw, ",") {
 		p = strings.TrimSpace(p)
 		if p == "" {
 			continue
@@ -484,7 +479,7 @@ func parseTokens(raw string) []tokenDef {
 
 func splitCSV(raw string) []string {
 	var out []string
-	for _, v := range strings.Split(raw, ",") {
+	for v := range strings.SplitSeq(raw, ",") {
 		v = strings.TrimSpace(v)
 		if v != "" {
 			out = append(out, v)

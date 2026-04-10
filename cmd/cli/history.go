@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	caido "github.com/caido-community/sdk-go"
 	"github.com/c0tton-fluff/caido-mcp-server/internal/httputil"
+	caido "github.com/caido-community/sdk-go"
 	"github.com/spf13/cobra"
 )
 
@@ -96,5 +96,3 @@ func runHistory(cmd *cobra.Command, args []string) error {
 
 	return nil
 }
-
-

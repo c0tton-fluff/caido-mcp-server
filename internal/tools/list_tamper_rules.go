@@ -54,8 +54,8 @@ func listTamperRulesHandler(
 
 		for _, c := range resp.TamperRuleCollections {
 			col := TamperCollectionSummary{
-				ID:    c.Id,
-				Name:  c.Name,
+				ID:   c.Id,
+				Name: c.Name,
 				Rules: make(
 					[]TamperRuleSummary, 0,
 					len(c.Rules),

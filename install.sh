@@ -7,7 +7,7 @@
 set -e
 
 REPO="c0tton-fluff/caido-mcp-server"
-VERSION="v1.4.0"
+VERSION="v1.5.0"
 INSTALL_DIR="${INSTALL_DIR:-$HOME/.local/bin}"
 TOOL="${TOOL:-mcp}"
 

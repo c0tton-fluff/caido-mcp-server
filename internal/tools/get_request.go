@@ -3,10 +3,11 @@ package tools
 import (
 	"context"
 	"fmt"
+	"slices"
 	"time"
 
-	caido "github.com/caido-community/sdk-go"
 	"github.com/c0tton-fluff/caido-mcp-server/internal/httputil"
+	caido "github.com/caido-community/sdk-go"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -20,19 +21,19 @@ type GetRequestInput struct {
 
 // GetRequestOutput is the output for a single request
 type GetRequestOutput struct {
-	ID          string             `json:"id"`
-	Method      string             `json:"method,omitempty"`
-	Host        string             `json:"host,omitempty"`
-	Port        int                `json:"port,omitempty"`
-	Path        string             `json:"path,omitempty"`
-	Query       string             `json:"query,omitempty"`
-	IsTLS       bool               `json:"isTls,omitempty"`
-	StatusCode  int                `json:"statusCode,omitempty"`
-	RoundtripMs int                `json:"roundtripMs,omitempty"`
-	CreatedAt   string             `json:"createdAt,omitempty"`
+	ID          string                  `json:"id"`
+	Method      string                  `json:"method,omitempty"`
+	Host        string                  `json:"host,omitempty"`
+	Port        int                     `json:"port,omitempty"`
+	Path        string                  `json:"path,omitempty"`
+	Query       string                  `json:"query,omitempty"`
+	IsTLS       bool                    `json:"isTls,omitempty"`
+	StatusCode  int                     `json:"statusCode,omitempty"`
+	RoundtripMs int                     `json:"roundtripMs,omitempty"`
+	CreatedAt   string                  `json:"createdAt,omitempty"`
 	Request     *httputil.ParsedMessage `json:"request,omitempty"`
 	Response    *httputil.ParsedMessage `json:"response,omitempty"`
-	Error       string             `json:"error,omitempty"`
+	Error       string                  `json:"error,omitempty"`
 }
 
 // GetRequestBatchOutput is the output for batch requests
@@ -44,12 +45,7 @@ func shouldInclude(include []string, field string) bool {
 	if len(include) == 0 {
 		return field == "metadata"
 	}
-	for _, f := range include {
-		if f == field {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(include, field)
 }
 
 func includeRequiresRaw(include []string) bool {

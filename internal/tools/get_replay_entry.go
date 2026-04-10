@@ -5,8 +5,8 @@ import (
 	"encoding/base64"
 	"fmt"
 
-	caido "github.com/caido-community/sdk-go"
 	"github.com/c0tton-fluff/caido-mcp-server/internal/httputil"
+	caido "github.com/caido-community/sdk-go"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -19,14 +19,14 @@ type GetReplayEntryInput struct {
 
 // GetReplayEntryOutput is the output of the get_replay_entry tool
 type GetReplayEntryOutput struct {
-	ID          string             `json:"id"`
-	Request     string             `json:"request"`
+	ID          string                  `json:"id"`
+	Request     string                  `json:"request"`
 	Response    *httputil.ParsedMessage `json:"response,omitempty"`
-	Host        string             `json:"host,omitempty"`
-	Port        int                `json:"port,omitempty"`
-	IsTLS       bool               `json:"isTls,omitempty"`
-	StatusCode  int                `json:"statusCode,omitempty"`
-	RoundtripMs int                `json:"roundtripMs,omitempty"`
+	Host        string                  `json:"host,omitempty"`
+	Port        int                     `json:"port,omitempty"`
+	IsTLS       bool                    `json:"isTls,omitempty"`
+	StatusCode  int                     `json:"statusCode,omitempty"`
+	RoundtripMs int                     `json:"roundtripMs,omitempty"`
 }
 
 // getReplayEntryHandler creates the handler function

@@ -44,7 +44,7 @@ func deleteFindingsRaw(
 	ids []string,
 	reporter string,
 ) (*deleteFindingsResp, error) {
-	var vars interface{}
+	var vars any
 	if len(ids) > 0 {
 		vars = &deleteFindingsByIDsVars{
 			Input: &deleteFindingsByIDsInput{Ids: ids},

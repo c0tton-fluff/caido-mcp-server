@@ -21,13 +21,13 @@ var secHeaders = map[string]bool{
 	"access-control-allow-methods":     true,
 	"server":                           true,
 	"x-powered-by":                     true,
-	"x-ratelimit-limit":               true,
-	"x-ratelimit-remaining":           true,
+	"x-ratelimit-limit":                true,
+	"x-ratelimit-remaining":            true,
 	"retry-after":                      true,
 	"cache-control":                    true,
-	"transfer-encoding":               true,
+	"transfer-encoding":                true,
 	"content-disposition":              true,
-	"x-request-id":                    true,
+	"x-request-id":                     true,
 }
 
 func fmtResp(p *httputil.ParsedMessage, allHeaders bool) string {

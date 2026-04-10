@@ -9,9 +9,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/c0tton-fluff/caido-mcp-server/internal/httputil"
 	caido "github.com/caido-community/sdk-go"
 	gen "github.com/caido-community/sdk-go/graphql"
-	"github.com/c0tton-fluff/caido-mcp-server/internal/httputil"
 )
 
 // BatchRequest is a single request in a batch.
@@ -59,10 +59,7 @@ func RunBatch(
 	}
 
 	// Cap concurrency to request count.
-	poolSize := concurrency
-	if poolSize > n {
-		poolSize = n
-	}
+	poolSize := min(concurrency, n)
 
 	// Create session pool. If this fails, return all errors.
 	pool, err := NewSessionPool(ctx, client, poolSize)

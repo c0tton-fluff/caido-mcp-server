@@ -6,8 +6,8 @@ import (
 	"os"
 	"time"
 
-	caido "github.com/caido-community/sdk-go"
 	"github.com/c0tton-fluff/caido-mcp-server/internal/auth"
+	caido "github.com/caido-community/sdk-go"
 	"github.com/spf13/cobra"
 )
 

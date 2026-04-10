@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"strings"
 
-	caido "github.com/caido-community/sdk-go"
-	gen "github.com/caido-community/sdk-go/graphql"
 	"github.com/c0tton-fluff/caido-mcp-server/internal/httputil"
 	"github.com/c0tton-fluff/caido-mcp-server/internal/replay"
+	caido "github.com/caido-community/sdk-go"
+	gen "github.com/caido-community/sdk-go/graphql"
 )
 
 // sendReplay sends a CRLF-normalized raw HTTP request via the Replay API
@@ -100,4 +100,3 @@ func sendReplay(
 	)
 	return fmtResp(resp, allHeaders) + "\n", nil
 }
-

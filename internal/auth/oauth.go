@@ -220,22 +220,22 @@ func (a *Authenticator) waitForToken(
 	}
 	defer conn.Close()
 
-	initMsg := map[string]interface{}{
+	initMsg := map[string]any{
 		"type": "connection_init",
 	}
 	if err := conn.WriteJSON(initMsg); err != nil {
 		return nil, fmt.Errorf("failed to send init: %w", err)
 	}
 
-	var ackResp map[string]interface{}
+	var ackResp map[string]any
 	if err := conn.ReadJSON(&ackResp); err != nil {
 		return nil, fmt.Errorf("failed to read ack: %w", err)
 	}
 
-	subMsg := map[string]interface{}{
+	subMsg := map[string]any{
 		"id":   "1",
 		"type": "subscribe",
-		"payload": map[string]interface{}{
+		"payload": map[string]any{
 			"query": `subscription CreatedAuthenticationToken(
 				$requestId: ID!
 			) {
@@ -252,7 +252,7 @@ func (a *Authenticator) waitForToken(
 					}
 				}
 			}`,
-			"variables": map[string]interface{}{
+			"variables": map[string]any{
 				"requestId": requestID,
 			},
 		},
@@ -278,7 +278,7 @@ func (a *Authenticator) readTokenFromWS(
 		default:
 		}
 
-		var msg map[string]interface{}
+		var msg map[string]any
 		if err := conn.ReadJSON(&msg); err != nil {
 			return nil, fmt.Errorf(
 				"failed to read message: %w", err,
@@ -301,7 +301,7 @@ func (a *Authenticator) readTokenFromWS(
 			}
 
 		case "error":
-			payload, _ := msg["payload"].([]interface{})
+			payload, _ := msg["payload"].([]any)
 			return nil, fmt.Errorf(
 				"subscription error: %v", payload,
 			)
@@ -316,31 +316,31 @@ func (a *Authenticator) readTokenFromWS(
 
 // parseWSTokenPayload extracts a StoredToken from a WS msg
 func parseWSTokenPayload(
-	msg map[string]interface{},
+	msg map[string]any,
 ) (*StoredToken, error) {
-	payload, ok := msg["payload"].(map[string]interface{})
+	payload, ok := msg["payload"].(map[string]any)
 	if !ok {
 		return nil, nil
 	}
 
-	data, ok := payload["data"].(map[string]interface{})
+	data, ok := payload["data"].(map[string]any)
 	if !ok {
 		return nil, nil
 	}
 
-	created, ok := data["createdAuthenticationToken"].(map[string]interface{})
+	created, ok := data["createdAuthenticationToken"].(map[string]any)
 	if !ok {
 		return nil, nil
 	}
 
-	if errData, ok := created["error"].(map[string]interface{}); ok && errData != nil {
+	if errData, ok := created["error"].(map[string]any); ok && errData != nil {
 		typename, _ := errData["__typename"].(string)
 		return nil, fmt.Errorf(
 			"authentication failed: %s", typename,
 		)
 	}
 
-	tokenData, ok := created["token"].(map[string]interface{})
+	tokenData, ok := created["token"].(map[string]any)
 	if !ok {
 		return nil, nil
 	}

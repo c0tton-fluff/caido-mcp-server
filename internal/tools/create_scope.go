@@ -90,7 +90,7 @@ func createScopeHandler(
 // RegisterCreateScopeTool registers the tool with the MCP server
 func RegisterCreateScopeTool(server *mcp.Server, client *caido.Client) {
 	mcp.AddTool(server, &mcp.Tool{
-		Name:        "caido_create_scope",
+		Name: "caido_create_scope",
 		Description: `Create scope. Params: name, allowlist, denylist. ` +
 			`Values are hostnames, not URLs. ` +
 			`Examples: "example.com", "*.example.com". ` +

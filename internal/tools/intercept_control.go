@@ -62,7 +62,7 @@ func RegisterInterceptControlTool(
 	server *mcp.Server, client *caido.Client,
 ) {
 	mcp.AddTool(server, &mcp.Tool{
-		Name: "caido_intercept_control",
+		Name:        "caido_intercept_control",
 		Description: `Toggle intercept. Params: action (pause/resume).`,
 	}, interceptControlHandler(client))
 }

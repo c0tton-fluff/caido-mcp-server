@@ -56,7 +56,7 @@ func exportFindingsRaw(
 	ids []string,
 	reporter string,
 ) (*exportFindingsResp, error) {
-	var vars interface{}
+	var vars any
 	if len(ids) > 0 {
 		vars = &exportFindingsByIDsVars{
 			Input: &exportFindingsByIDsInput{Ids: ids},

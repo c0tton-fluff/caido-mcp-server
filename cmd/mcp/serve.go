@@ -7,9 +7,9 @@ import (
 	"os/signal"
 	"syscall"
 
-	caido "github.com/caido-community/sdk-go"
 	"github.com/c0tton-fluff/caido-mcp-server/internal/auth"
 	"github.com/c0tton-fluff/caido-mcp-server/internal/tools"
+	caido "github.com/caido-community/sdk-go"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/spf13/cobra"
 )

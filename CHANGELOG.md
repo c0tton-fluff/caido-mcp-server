@@ -11,6 +11,16 @@ All notable changes to this project will be documented in this file.
 - **Batch engine** (`internal/replay/batch.go`) - shared by MCP tool and CLI. Handles session acquisition, CRLF normalization, host resolution, parallel polling.
 - Auth mode support in CLI batch: `bearer` (default), `cookie:NAME`, `header:NAME` - matches `burp-batch` interface.
 
+### Changed
+- Upgraded sdk-go to v0.4.0 (`use_struct_references: false`) -- fixes 53 NON_NULL fields across generated types, removes manual GraphQL workarounds for `delete_findings`, `export_findings`, and `create_tamper_rule`.
+
+### Fixed
+- `caido_create_tamper_rule` -- nested oneof serialization for section, operation, matcher, and replacer fields now correct at all 4 levels of nesting.
+- `caido_create_tamper_rule` -- `sources` field sent as `[]` (empty array) instead of omitted -- Caido API requires non-null.
+- `caido_get_sitemap` -- null entries in sitemap response no longer cause a panic.
+- `caido_run_workflow` -- Blob-encoded workflow output decoded correctly.
+- `caido_list_environments` -- description field populated correctly.
+
 ## [1.4.0] - 2026-04-09
 
 ### Added

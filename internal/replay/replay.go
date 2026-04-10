@@ -52,7 +52,7 @@ func PollForEntry(
 	client *caido.Client,
 	sessionID, prevEntryID string,
 ) (*gen.GetReplayEntryReplayEntry, error) {
-	for i := 0; i < PollMaxRetries; i++ {
+	for range PollMaxRetries {
 		sessResp, err := client.Replay.GetSession(ctx, sessionID)
 		if err != nil {
 			return nil, fmt.Errorf("poll session: %w", err)

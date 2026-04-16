@@ -59,10 +59,7 @@ func runLogin(cmd *cobra.Command, args []string) error {
 
 	// Verify the token works
 	client.SetAccessToken(token)
-	one := 1
-	_, err = client.Requests.List(
-		ctx, &caido.ListRequestsOptions{First: &one},
-	)
+	_, err = client.Projects.List(ctx)
 	if err != nil {
 		return fmt.Errorf(
 			"token verification failed: %w", err,

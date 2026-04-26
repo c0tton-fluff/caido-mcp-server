@@ -4,6 +4,7 @@ import (
 	"context"
 
 	caido "github.com/caido-community/sdk-go"
+	gen "github.com/caido-community/sdk-go/graphql"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -50,12 +51,29 @@ func listFiltersHandler(
 					ID:     f.Id,
 					Name:   f.Name,
 					Alias:  f.Alias,
-					Clause: f.Clause,
+					Clause: filterPresetClauseToString(f.Clause),
 				},
 			)
 		}
 
 		return nil, output, nil
+	}
+}
+
+// filterPresetClauseToString unwraps the Query union (HTTPQL | StreamQL)
+// returned by the FilterPreset.clause field into a plain query string.
+// Caido 0.56+ exposes `clause` as a union; both variants share a `code`
+// field that holds the raw query expression.
+func filterPresetClauseToString(
+	clause gen.ListFilterPresetsFilterPresetsFilterPresetClauseQuery,
+) string {
+	switch v := clause.(type) {
+	case *gen.ListFilterPresetsFilterPresetsFilterPresetClauseHTTPQL:
+		return v.Code
+	case *gen.ListFilterPresetsFilterPresetsFilterPresetClauseStreamQL:
+		return v.Code
+	default:
+		return ""
 	}
 }
 

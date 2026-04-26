@@ -4,6 +4,7 @@ import (
 	"context"
 
 	caido "github.com/caido-community/sdk-go"
+	gen "github.com/caido-community/sdk-go/graphql"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -73,7 +74,7 @@ func listTamperRulesHandler(
 					ID:        r.Id,
 					Name:      r.Name,
 					Enabled:   enabled,
-					Condition: r.Condition,
+					Condition: tamperRuleConditionToString(r.Condition),
 					Sources:   sources,
 				})
 			}
@@ -85,6 +86,28 @@ func listTamperRulesHandler(
 
 		return nil, output, nil
 	}
+}
+
+// tamperRuleConditionToString unwraps the Query union (HTTPQL | StreamQL)
+// returned by the TamperRule.condition field into a plain query string.
+// Returns nil when the rule has no condition. Caido 0.56+ exposes
+// `condition` as a union; both variants share a `code` field.
+func tamperRuleConditionToString(
+	cond *gen.ListTamperRuleCollectionsTamperRuleCollectionsTamperRuleCollectionRulesTamperRuleConditionQuery,
+) *string {
+	if cond == nil {
+		return nil
+	}
+	var s string
+	switch v := (*cond).(type) {
+	case *gen.ListTamperRuleCollectionsTamperRuleCollectionsTamperRuleCollectionRulesTamperRuleConditionHTTPQL:
+		s = v.Code
+	case *gen.ListTamperRuleCollectionsTamperRuleCollectionsTamperRuleCollectionRulesTamperRuleConditionStreamQL:
+		s = v.Code
+	default:
+		return nil
+	}
+	return &s
 }
 
 // RegisterListTamperRulesTool registers the tool

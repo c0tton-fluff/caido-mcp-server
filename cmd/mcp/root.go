@@ -34,7 +34,7 @@ func getCaidoURL(cmd *cobra.Command) (string, error) {
 		url = os.Getenv("CAIDO_URL")
 	}
 	if url == "" {
-		return "", fmt.Errorf("Caido URL is required. Set --url flag or CAIDO_URL environment variable")
+		return "", fmt.Errorf("caido URL is required: set --url flag or CAIDO_URL env var")
 	}
 	return url, nil
 }

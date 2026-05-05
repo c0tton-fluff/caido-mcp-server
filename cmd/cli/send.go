@@ -131,9 +131,7 @@ func buildRequest(
 		lines = append(lines, "Connection: close")
 	}
 
-	for _, h := range headers {
-		lines = append(lines, h)
-	}
+	lines = append(lines, headers...)
 
 	if body != "" && !hasHeaderPrefix(headers, "content-length") {
 		lines = append(lines,

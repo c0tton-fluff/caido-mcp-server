@@ -148,6 +148,16 @@ func runServe(cmd *cobra.Command, args []string) error {
 	// Filters
 	tools.RegisterListFiltersTool(server, client)
 
+	// Hosted Files
+	tools.RegisterListHostedFilesTool(server, client)
+
+	// Tasks
+	tools.RegisterListTasksTool(server, client)
+	tools.RegisterCancelTaskTool(server, client)
+
+	// Plugins
+	tools.RegisterListPluginsTool(server, client)
+
 	// Resources (read-only data for agent context)
 	resources.RegisterAll(server, client)
 

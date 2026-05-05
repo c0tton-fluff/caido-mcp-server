@@ -2,10 +2,30 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [2.0.0] - 2026-05-05
 
 ### Added
-- **`caido_update_tamper_rule` MCP tool** - update an existing Match & Replace rule without deleting and recreating it. Uses the same raw GraphQL oneof handling as `caido_create_tamper_rule`.
+- **`caido_create_replay_session` MCP tool** - create named replay sessions with optional request seeding and collection assignment. Two-step flow: CreateSession then RenameSession.
+- **MCP Resources** - expose Caido data as read-only resources for zero-tool-call context:
+  - `caido://requests/{id}` - full request/response content
+  - `caido://replay-sessions/{id}` - session details with entry list
+  - `caido://sitemap` - root domains from sitemap
+  - `caido://findings` - security finding summaries
+- **Response fingerprinting** - responses include content kind (json/html/xml/text/binary) and content-type detection
+- **Adaptive body limits** - auto-scale response body limits by content type (4KB JSON, 3KB HTML, 200B binary) when no explicit limit set
+- **Response diff mode** - repeated identical responses in the same session return a compact diff summary instead of full body, saving agent tokens
+- **`caido_list_hosted_files` MCP tool** - list hosted files for payload serving
+- **`caido_list_tasks` MCP tool** - list running background tasks
+- **`caido_cancel_task` MCP tool** - cancel a running task by ID
+- **`caido_list_plugins` MCP tool** - list installed plugin packages
+- **`caido_update_tamper_rule` MCP tool** - update an existing Match & Replace rule without deleting and recreating it
+- **Windows binaries** - build pipeline now produces windows/amd64 and windows/arm64 .exe binaries
+- **Test infrastructure** - 115 tests with race detection, mock GraphQL server, MCP in-memory transport testing, schema contract tests, GitHub Actions CI
+
+### Changed
+- Upgraded to sdk-go v0.5.0 (Caido 0.56 Query union types, HTTPQL/StreamQL split)
+- Tool count: 37 -> 42 (5 new tools)
+- Build targets: 8 -> 12 binaries (added Windows amd64/arm64)
 
 ## [1.5.0] - 2026-04-09
 

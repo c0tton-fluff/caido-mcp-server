@@ -11,9 +11,9 @@ import (
 )
 
 type CreateFilterInput struct {
-	Name  string `json:"name" jsonschema:"required,description=Name of the filter preset"`
-	Query string `json:"query" jsonschema:"required,description=HTTPQL query string"`
-	Alias string `json:"alias,omitempty" jsonschema:"description=Optional alias for the filter"`
+	Name  string `json:"name" jsonschema:"required,Name of the filter preset"`
+	Query string `json:"query" jsonschema:"required,HTTPQL query string"`
+	Alias string `json:"alias,omitempty" jsonschema:"Optional alias for the filter"`
 }
 
 type CreateFilterOutput struct {

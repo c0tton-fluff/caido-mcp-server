@@ -51,6 +51,8 @@ var allRegistrations = []struct {
 	{"caido_toggle_tamper_rule", tools.RegisterToggleTamperRuleTool},
 	{"caido_delete_tamper_rule", tools.RegisterDeleteTamperRuleTool},
 	{"caido_list_filters", tools.RegisterListFiltersTool},
+	{"caido_create_filter", tools.RegisterCreateFilterTool},
+	{"caido_delete_filter", tools.RegisterDeleteFilterTool},
 	{"caido_list_hosted_files", tools.RegisterListHostedFilesTool},
 	{"caido_list_tasks", tools.RegisterListTasksTool},
 	{"caido_cancel_task", tools.RegisterCancelTaskTool},

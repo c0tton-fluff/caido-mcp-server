@@ -9,7 +9,7 @@ import (
 )
 
 type DeleteFilterInput struct {
-	ID string `json:"id" jsonschema:"required,description=ID of the filter preset to delete"`
+	ID string `json:"id" jsonschema:"required,ID of the filter preset to delete"`
 }
 
 type DeleteFilterOutput struct {

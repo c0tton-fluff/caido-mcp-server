@@ -40,7 +40,7 @@ func TestToolCount(t *testing.T) {
 		t.Fatalf("ListTools failed: %v", err)
 	}
 
-	const expectedTools = 60
+	const expectedTools = 93
 	if len(result.Tools) != expectedTools {
 		t.Fatalf("want %d tools registered, got %d", expectedTools, len(result.Tools))
 	}

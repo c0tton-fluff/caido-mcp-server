@@ -2,6 +2,39 @@
 
 All notable changes to this project will be documented in this file.
 
+## [4.0.0] - 2026-05-27
+
+### Added
+- **WebSocket history (read)** - browse WS traffic like the WebSocket tab in Caido. Implemented via raw GraphQL since the Go SDK does not wrap these queries:
+  - `caido_list_ws_streams` - list WebSocket connections (streams)
+  - `caido_list_ws_messages` - list frames of a stream (direction CLIENT/SERVER, format TEXT/BINARY, decoded body)
+- **Automate (fuzzing) management** - create/rename/delete sessions, enabling full fuzzing workflows from MCP:
+  - `caido_create_automate_session` - seed a session from a request ID or raw HTTP
+  - `caido_rename_automate_session`, `caido_delete_automate_session`
+- **Workflow management** - beyond list/run/toggle:
+  - `caido_get_workflow` - inspect a workflow's node-graph definition
+  - `caido_create_workflow` - create from a JSON definition
+  - `caido_rename_workflow`, `caido_delete_workflow`
+  - `caido_set_workflow_scope` - globalize/localize a workflow
+  - `caido_list_workflow_node_definitions` - list available node building blocks
+- **Plugin management**:
+  - `caido_install_plugin` (url or store manifest ID), `caido_delete_plugin`, `caido_toggle_plugin`
+- **Hosted file management**: `caido_rename_hosted_file`, `caido_delete_hosted_file`
+- **Intercept extensions**:
+  - `caido_get_intercept_entry` - single entry with request/response
+  - `caido_get_intercept_options`, `caido_set_intercept_options` - read/configure proxy interception and scope
+  - `caido_delete_intercept_entry`, `caido_delete_intercept_entries` (HTTPQL filter)
+- **Sitemap extensions**: `caido_get_sitemap_entry`, `caido_clear_sitemap`, `caido_delete_sitemap_entries`
+- **Tamper collections**: `caido_create_tamper_collection`, `caido_delete_tamper_collection`, `caido_get_tamper_rule`
+- **Findings**: `caido_get_finding` (single finding + linked request), `caido_list_finding_reporters`
+- **Replay sessions**: `caido_get_replay_session`, `caido_rename_replay_session`
+- **Requests**: `caido_get_request_metadata` - lightweight metadata without raw bodies
+- **User**: `caido_whoami` - the currently authenticated user
+
+### Changed
+- Tool count: 60 -> 93 (33 new tools)
+- Every Caido SDK mutation/query of practical value for pentesting is now exposed as an MCP tool, plus WebSocket history read access via raw GraphQL
+
 ## [3.0.0] - 2026-05-21
 
 ### Added

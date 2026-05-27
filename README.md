@@ -22,7 +22,7 @@
 
 Two ways to interact with your Caido proxy:
 
-- **MCP Server** - expose 60 tools and 4 read-only resources to AI assistants (Claude Code, Cursor, etc.) via the Model Context Protocol
+- **MCP Server** - expose 93 tools and 4 read-only resources to AI assistants (Claude Code, Cursor, etc.) via the Model Context Protocol
 - **CLI** - standalone terminal client for pentesters who prefer the command line
 
 Both share the same auth token, the same Go SDK, and the same codebase.
@@ -141,12 +141,15 @@ This opens your browser for OAuth authentication and saves the token to `~/.caid
 "What's in scope?"
 ```
 
-### MCP Tools (60)
+### MCP Tools (93)
 
 | Tool | Description |
 |------|-------------|
 | `caido_list_requests` | List requests with HTTPQL filter and pagination |
 | `caido_get_request` | Get request details (metadata, headers, body). 2KB body limit default |
+| `caido_get_request_metadata` | Get request metadata (method, url, status, timing) without raw bodies |
+| `caido_list_ws_streams` | List WebSocket connections from history (WebSocket tab) |
+| `caido_list_ws_messages` | List WebSocket frames for a stream (direction/format/body) |
 | `caido_send_request` | Send HTTP request via Replay, returns response inline. Polls up to 10s. Auto-injects session cookies and persists `Set-Cookie` (toggle with `useCookieJar`) |
 | `caido_batch_send` | Send multiple requests in parallel (BAC sweeps, parameter fuzzing, endpoint sweeps). Max 50 per batch |
 | `caido_edit_request` | Modify and resend an existing request. Preserves auth/cookies while changing method, path, headers, or body |
@@ -156,6 +159,8 @@ This opens your browser for OAuth authentication and saves the token to `~/.caid
 | `caido_delete_replay_sessions` | Bulk delete replay sessions by ID |
 | `caido_move_replay_session` | Move a session to a different collection |
 | `caido_get_replay_entry` | Get replay entry with response. 2KB body limit default |
+| `caido_get_replay_session` | Get a replay session (name, collection, active entry, entry count) |
+| `caido_rename_replay_session` | Rename a replay session |
 | `caido_clear_session_cookies` | Wipe the in-memory cookie jar for a replay session |
 | `caido_get_session_cookies` | List metadata for cookies stored in a session jar matching a URL (values not returned) |
 | `caido_list_replay_collections` | List replay session collections |
@@ -166,11 +171,19 @@ This opens your browser for OAuth authentication and saves the token to `~/.caid
 | `caido_get_automate_session` | Get session details with entry list |
 | `caido_get_automate_entry` | Get fuzz results and payloads |
 | `caido_automate_task_control` | Start/pause/resume/cancel fuzzing tasks |
+| `caido_create_automate_session` | Create a fuzzing session seeded from a request ID or raw HTTP |
+| `caido_rename_automate_session` | Rename a fuzzing session |
+| `caido_delete_automate_session` | Delete a fuzzing session and its results |
 | `caido_list_findings` | List security findings |
 | `caido_create_finding` | Create finding linked to a request |
 | `caido_delete_findings` | Delete findings by IDs or reporter name |
 | `caido_export_findings` | Export findings for reporting |
+| `caido_get_finding` | Get a single finding with its linked request |
+| `caido_list_finding_reporters` | List all finding reporter names |
 | `caido_get_sitemap` | Browse sitemap hierarchy |
+| `caido_get_sitemap_entry` | Get a single sitemap entry |
+| `caido_clear_sitemap` | Clear the entire sitemap tree |
+| `caido_delete_sitemap_entries` | Delete specific sitemap entries by ID |
 | `caido_list_scopes` | List target scopes |
 | `caido_create_scope` | Create new scope with allow/deny lists |
 | `caido_rename_scope` | Rename a scope |
@@ -183,17 +196,32 @@ This opens your browser for OAuth authentication and saves the token to `~/.caid
 | `caido_list_workflows` | List automation workflows |
 | `caido_run_workflow` | Execute an active or convert workflow |
 | `caido_toggle_workflow` | Enable or disable a workflow |
+| `caido_get_workflow` | Get a workflow including its node-graph definition |
+| `caido_create_workflow` | Create a workflow from a node-graph definition (JSON) |
+| `caido_rename_workflow` | Rename a workflow |
+| `caido_delete_workflow` | Delete a workflow |
+| `caido_set_workflow_scope` | Globalize or localize a workflow |
+| `caido_list_workflow_node_definitions` | List available workflow node definitions |
 | `caido_list_tamper_rules` | List Match & Replace rule collections |
 | `caido_create_tamper_rule` | Create a tamper rule in a collection |
 | `caido_update_tamper_rule` | Update an existing tamper rule |
 | `caido_toggle_tamper_rule` | Enable or disable a tamper rule |
 | `caido_delete_tamper_rule` | Delete a tamper rule |
+| `caido_get_tamper_rule` | Get a tamper rule by ID |
+| `caido_create_tamper_collection` | Create a tamper rule collection |
+| `caido_delete_tamper_collection` | Delete a tamper rule collection and its rules |
 | `caido_get_instance` | Get Caido version and platform info |
+| `caido_whoami` | Get the currently authenticated user |
 | `caido_intercept_status` | Get intercept status (PAUSED/RUNNING) |
 | `caido_intercept_control` | Pause or resume intercept |
 | `caido_list_intercept_entries` | List queued intercept entries with HTTPQL filtering |
 | `caido_forward_intercept` | Forward intercepted request, optionally with modifications |
 | `caido_drop_intercept` | Drop intercepted request |
+| `caido_get_intercept_entry` | Get a single intercept entry with request/response |
+| `caido_get_intercept_options` | Get intercept proxy configuration |
+| `caido_set_intercept_options` | Configure request/response/WebSocket interception and scope |
+| `caido_delete_intercept_entry` | Delete a single intercept queue entry |
+| `caido_delete_intercept_entries` | Delete intercept entries matching an HTTPQL filter |
 | `caido_list_environments` | List environments and their variables |
 | `caido_select_environment` | Switch active environment |
 | `caido_create_environment` | Create a new environment |
@@ -202,9 +230,14 @@ This opens your browser for OAuth authentication and saves the token to `~/.caid
 | `caido_create_filter` | Save an HTTPQL query as a named filter preset |
 | `caido_delete_filter` | Delete a filter preset |
 | `caido_list_hosted_files` | List hosted payload files |
+| `caido_rename_hosted_file` | Rename a hosted file |
+| `caido_delete_hosted_file` | Delete a hosted file |
 | `caido_list_tasks` | List running background tasks |
 | `caido_cancel_task` | Cancel a running task by ID |
 | `caido_list_plugins` | List installed plugin packages |
+| `caido_install_plugin` | Install a plugin from a url or store manifest ID |
+| `caido_delete_plugin` | Uninstall an upstream plugin |
+| `caido_toggle_plugin` | Enable or disable a plugin |
 
 ### MCP Resources (4)
 

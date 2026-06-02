@@ -4,55 +4,10 @@ import (
 	"context"
 	"fmt"
 
-	gql "github.com/Khan/genqlient/graphql"
 	caido "github.com/caido-community/sdk-go"
+	gen "github.com/caido-community/sdk-go/graphql"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
-
-// The Go SDK v0.5.0 does not wrap WebSocket (stream) queries, so we issue
-// raw GraphQL via client.GraphQL.MakeRequest -- the same approach used by
-// create_tamper_rule.go. Field names and the WS protocol enum are taken
-// from the bundled graphql/schema.graphql (type Stream, enum StreamProtocol).
-
-type listWsStreamsVars struct {
-	First    int     `json:"first"`
-	After    *string `json:"after,omitempty"`
-	Protocol string  `json:"protocol"`
-	ScopeID  *string `json:"scopeId,omitempty"`
-}
-
-type listWsStreamsResp struct {
-	Streams struct {
-		Edges []struct {
-			Cursor string `json:"cursor"`
-			Node   struct {
-				ID        string `json:"id"`
-				Host      string `json:"host"`
-				Port      int    `json:"port"`
-				Path      string `json:"path"`
-				IsTls     bool   `json:"isTls"`
-				Direction string `json:"direction"`
-				Source    string `json:"source"`
-				CreatedAt int64  `json:"createdAt"`
-			} `json:"node"`
-		} `json:"edges"`
-		PageInfo struct {
-			HasNextPage bool    `json:"hasNextPage"`
-			EndCursor   *string `json:"endCursor"`
-		} `json:"pageInfo"`
-	} `json:"streams"`
-}
-
-const listWsStreamsQuery = `
-query ListWsStreams($first: Int!, $after: String, $protocol: StreamProtocol!, $scopeId: ID) {
-	streams(first: $first, after: $after, protocol: $protocol, scopeId: $scopeId) {
-		edges {
-			cursor
-			node { id host port path isTls direction source createdAt }
-		}
-		pageInfo { hasNextPage endCursor }
-	}
-}`
 
 // ListWsStreamsInput is the input for the list_ws_streams tool
 type ListWsStreamsInput struct {
@@ -96,42 +51,38 @@ func listWsStreamsHandler(
 			limit = 100
 		}
 
-		vars := &listWsStreamsVars{First: limit, Protocol: "WS"}
+		opts := &caido.ListStreamsOptions{
+			First:    &limit,
+			Protocol: gen.StreamProtocolWs,
+		}
 		if input.After != "" {
-			vars.After = &input.After
+			opts.After = &input.After
 		}
 		if input.ScopeID != "" {
-			vars.ScopeID = &input.ScopeID
+			opts.ScopeID = &input.ScopeID
 		}
 
-		gqlReq := &gql.Request{
-			OpName:    "ListWsStreams",
-			Query:     listWsStreamsQuery,
-			Variables: vars,
-		}
-		data := &listWsStreamsResp{}
-		if err := client.GraphQL.MakeRequest(
-			ctx, gqlReq, &gql.Response{Data: data},
-		); err != nil {
+		resp, err := client.Streams.List(ctx, opts)
+		if err != nil {
 			return nil, ListWsStreamsOutput{}, fmt.Errorf(
 				"failed to list ws streams: %w", err,
 			)
 		}
 
-		conn := data.Streams
+		conn := resp.Streams
 		output := ListWsStreamsOutput{
 			Streams: make([]WsStreamSummary, 0, len(conn.Edges)),
 		}
 		for _, edge := range conn.Edges {
 			n := edge.Node
 			output.Streams = append(output.Streams, WsStreamSummary{
-				ID:        n.ID,
+				ID:        n.Id,
 				Host:      n.Host,
 				Port:      n.Port,
 				Path:      n.Path,
 				IsTLS:     n.IsTls,
-				Direction: n.Direction,
-				Source:    n.Source,
+				Direction: string(n.Direction),
+				Source:    string(n.Source),
 				CreatedAt: n.CreatedAt,
 			})
 		}

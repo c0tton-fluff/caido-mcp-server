@@ -4,7 +4,7 @@ go 1.24.0
 
 require (
 	github.com/Khan/genqlient v0.8.1
-	github.com/caido-community/sdk-go v0.5.0
+	github.com/caido-community/sdk-go v0.5.1-0.20260602103949-e8477aca6469
 	github.com/gorilla/websocket v1.5.3
 	github.com/modelcontextprotocol/go-sdk v1.2.0
 	github.com/spf13/cobra v1.10.2

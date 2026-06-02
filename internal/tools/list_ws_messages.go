@@ -5,57 +5,13 @@ import (
 	"encoding/base64"
 	"fmt"
 
-	gql "github.com/Khan/genqlient/graphql"
 	caido "github.com/caido-community/sdk-go"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// WebSocket frame content lives on StreamWsMessage.head (a StreamWsMessageEdit
-// in the bundled schema): direction (StreamMessageDirection CLIENT/SERVER),
-// format (StreamWsMessageFormat TEXT/BINARY), length, and raw (a Blob, which
-// the API serializes as base64 -- decoded here like the other Blob tools).
-// Issued as raw GraphQL since the Go SDK v0.5.0 does not wrap stream queries.
-
-type listWsMessagesVars struct {
-	StreamID string  `json:"streamId"`
-	First    int     `json:"first"`
-	After    *string `json:"after,omitempty"`
-}
-
-type listWsMessagesResp struct {
-	StreamWsMessages struct {
-		Edges []struct {
-			Cursor string `json:"cursor"`
-			Node   struct {
-				ID   string `json:"id"`
-				Head struct {
-					Direction string `json:"direction"`
-					Format    string `json:"format"`
-					Length    int    `json:"length"`
-					Raw       string `json:"raw"`
-				} `json:"head"`
-			} `json:"node"`
-		} `json:"edges"`
-		PageInfo struct {
-			HasNextPage bool    `json:"hasNextPage"`
-			EndCursor   *string `json:"endCursor"`
-		} `json:"pageInfo"`
-	} `json:"streamWsMessages"`
-}
-
-const listWsMessagesQuery = `
-query ListWsMessages($streamId: ID!, $first: Int!, $after: String) {
-	streamWsMessages(streamId: $streamId, first: $first, after: $after) {
-		edges {
-			cursor
-			node {
-				id
-				head { direction format length raw }
-			}
-		}
-		pageInfo { hasNextPage endCursor }
-	}
-}`
+// WebSocket frame content lives on each message's head field (a
+// StreamWsMessageEdit): direction (CLIENT/SERVER), format (TEXT/BINARY),
+// length, and raw (a Blob the API serializes as base64, decoded here).
 
 // ListWsMessagesInput is the input for the list_ws_messages tool
 type ListWsMessagesInput struct {
@@ -112,37 +68,30 @@ func listWsMessagesHandler(
 			bodyLimit = 65536
 		}
 
-		vars := &listWsMessagesVars{StreamID: input.StreamID, First: limit}
+		opts := &caido.ListWsMessagesOptions{First: &limit}
 		if input.After != "" {
-			vars.After = &input.After
+			opts.After = &input.After
 		}
 
-		gqlReq := &gql.Request{
-			OpName:    "ListWsMessages",
-			Query:     listWsMessagesQuery,
-			Variables: vars,
-		}
-		data := &listWsMessagesResp{}
-		if err := client.GraphQL.MakeRequest(
-			ctx, gqlReq, &gql.Response{Data: data},
-		); err != nil {
+		resp, err := client.Streams.ListWsMessages(ctx, input.StreamID, opts)
+		if err != nil {
 			return nil, ListWsMessagesOutput{}, fmt.Errorf(
 				"failed to list ws messages: %w", err,
 			)
 		}
 
-		conn := data.StreamWsMessages
+		conn := resp.StreamWsMessages
 		output := ListWsMessagesOutput{
 			Messages: make([]WsMessageSummary, 0, len(conn.Edges)),
 		}
 		for _, edge := range conn.Edges {
-			n := edge.Node
-			body, truncated := decodeWsBody(n.Head.Raw, bodyLimit)
+			head := edge.Node.Head
+			body, truncated := decodeWsBody(head.Raw, bodyLimit)
 			output.Messages = append(output.Messages, WsMessageSummary{
-				ID:        n.ID,
-				Direction: n.Head.Direction,
-				Format:    n.Head.Format,
-				Length:    n.Head.Length,
+				ID:        edge.Node.Id,
+				Direction: string(head.Direction),
+				Format:    string(head.Format),
+				Length:    head.Length,
 				Body:      body,
 				Truncated: truncated,
 			})

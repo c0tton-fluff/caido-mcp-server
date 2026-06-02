@@ -14,8 +14,8 @@ github.com/bmatcuk/doublestar/v4 v4.6.1 h1:FH9SifrbvJhnlQpztAx++wlkk70QBf0iBWDwN
 github.com/bmatcuk/doublestar/v4 v4.6.1/go.mod h1:xBQ8jztBU6kakFMg+8WGxn0c6z1fTSPVIjEY1Wr7jzc=
 github.com/bradleyjkemp/cupaloy/v2 v2.6.0 h1:knToPYa2xtfg42U3I6punFEjaGFKWQRXJwj0JTv4mTs=
 github.com/bradleyjkemp/cupaloy/v2 v2.6.0/go.mod h1:bm7JXdkRd4BHJk9HpwqAI8BoAY1lps46Enkdqw6aRX0=
-github.com/caido-community/sdk-go v0.5.0 h1:oU4iwBN4bKvDBsJU6qE8j+laFcyyVHHE2uPll/Q0Ru4=
-github.com/caido-community/sdk-go v0.5.0/go.mod h1:7O5FNuZJAaXqUNI/DXxuT1KwJZnCKZUFbJ+dbfhZ3hY=
+github.com/caido-community/sdk-go v0.5.1-0.20260602103949-e8477aca6469 h1:y02CbyEHZ9PBF/1z7jEA86uMdC6b7KlpuulvlT1Qxb8=
+github.com/caido-community/sdk-go v0.5.1-0.20260602103949-e8477aca6469/go.mod h1:7O5FNuZJAaXqUNI/DXxuT1KwJZnCKZUFbJ+dbfhZ3hY=
 github.com/cpuguy83/go-md2man/v2 v2.0.6/go.mod h1:oOW0eioCTA6cOiMLiUPZOpcVxMig6NIQQ7OS05n1F4g=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=

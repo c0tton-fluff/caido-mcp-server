@@ -23,6 +23,9 @@ All notable changes to this project will be documented in this file.
 ### Internal
 - Documented the genqlient v0.8.1 oneof/omitempty limitation in `create_tamper_rule.go` as an upstream constraint (the `delete_findings`/`export_findings` tools use clean typed structs and need no workaround).
 
+### Changed (SDK alignment)
+- Added WebSocket/stream read queries to `caido-community/sdk-go` (new `StreamSDK`: `List`, `Get`, `ListWsMessages`) and bumped this server to that SDK build. `caido_list_ws_streams` and `caido_list_ws_messages` now use the typed SDK wrappers instead of hand-rolled raw GraphQL.
+
 ## [3.0.0] - 2026-05-21
 
 ### Added

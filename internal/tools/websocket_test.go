@@ -17,7 +17,7 @@ func b64(s string) string {
 	return base64.StdEncoding.EncodeToString([]byte(s))
 }
 
-// streamsData builds the "streams" connection payload for OpName ListWsStreams.
+// streamsData builds the "streams" connection payload for OpName ListStreams.
 // hasNext drives pagination; endCursor is only meaningful when hasNext is true.
 func streamsData(hasNext bool, endCursor string, ids ...string) map[string]any {
 	edges := make([]map[string]any, len(ids))
@@ -52,7 +52,7 @@ func streamsData(hasNext bool, endCursor string, ids ...string) map[string]any {
 }
 
 // wsMessagesData builds the "streamWsMessages" connection payload for OpName
-// ListWsMessages. raw is provided already base64-encoded.
+// ListStreamWsMessages. raw is provided already base64-encoded.
 func wsMessagesData(hasNext bool, endCursor string, raws ...string) map[string]any {
 	edges := make([]map[string]any, len(raws))
 	for i, raw := range raws {
@@ -131,7 +131,7 @@ func TestListWsStreamsTool(t *testing.T) {
 				tools.RegisterListWsStreamsTool(s, c)
 			})
 			if tt.registerOp {
-				env.Mock.On("ListWsStreams", tt.mock)
+				env.Mock.On("ListStreams", tt.mock)
 			}
 
 			result := env.CallTool(t, "caido_list_ws_streams", tt.input)
@@ -233,7 +233,7 @@ func TestListWsMessagesTool(t *testing.T) {
 				tools.RegisterListWsMessagesTool(s, c)
 			})
 			if tt.registerOp {
-				env.Mock.On("ListWsMessages", tt.mock)
+				env.Mock.On("ListStreamWsMessages", tt.mock)
 			}
 
 			result := env.CallTool(t, "caido_list_ws_messages", tt.input)

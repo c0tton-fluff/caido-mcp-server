@@ -8,6 +8,7 @@ import (
 	"time"
 
 	caido "github.com/caido-community/sdk-go"
+	gen "github.com/caido-community/sdk-go/graphql"
 )
 
 const (
@@ -37,7 +38,12 @@ func GetOrCreateSession(
 	if defaultSessionID != "" {
 		return defaultSessionID, nil
 	}
-	sessionID, _, err := client.Replay.CreateSession(ctx, nil)
+	// Caido 0.57 GraphQL contract requires kind on CreateReplaySession.
+	// Pass an explicit HTTP default instead of nil so we don't rely on
+	// sdk-go's empty-string fallback (fragile across SDK pins).
+	sessionID, _, err := client.Replay.CreateSession(
+		ctx, &gen.CreateReplaySessionInput{Kind: gen.ReplaySessionKindHttp},
+	)
 	if err != nil {
 		return "", fmt.Errorf("create replay session: %w", err)
 	}

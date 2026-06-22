@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	caido "github.com/caido-community/sdk-go"
 	gen "github.com/caido-community/sdk-go/graphql"
@@ -13,6 +14,7 @@ type CreateReplaySessionInput struct {
 	Name            string `json:"name,omitempty" jsonschema:"Session name (applied via rename after creation)"`
 	CollectionID    string `json:"collectionId,omitempty" jsonschema:"Collection ID to assign the session to"`
 	RequestSourceID string `json:"requestSourceId,omitempty" jsonschema:"Existing request ID to seed the session with"`
+	Kind            string `json:"kind,omitempty" jsonschema:"Session kind - allowed values: HTTP (default) or WS for WebSocket replay"`
 }
 
 type CreateReplaySessionOutput struct {
@@ -28,7 +30,21 @@ func createReplaySessionHandler(
 		req *mcp.CallToolRequest,
 		input CreateReplaySessionInput,
 	) (*mcp.CallToolResult, CreateReplaySessionOutput, error) {
-		createInput := &gen.CreateReplaySessionInput{}
+		// CreateReplaySessionInput.kind is a required GraphQL field per Caido 0.57 schema.
+		// Force HTTP default explicitly so we don't depend on sdk-go's empty-string default,
+		// which can disappear across SDK pins or when backend tightens validation.
+		kind := gen.ReplaySessionKindHttp
+		switch strings.ToUpper(strings.TrimSpace(input.Kind)) {
+		case "", "HTTP":
+			// keep default HTTP
+		case "WS":
+			kind = gen.ReplaySessionKindWs
+		default:
+			return nil, CreateReplaySessionOutput{}, fmt.Errorf(
+				"invalid kind %q (allowed: HTTP, WS)", input.Kind,
+			)
+		}
+		createInput := &gen.CreateReplaySessionInput{Kind: kind}
 
 		if input.CollectionID != "" {
 			createInput.CollectionId = &input.CollectionID

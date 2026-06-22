@@ -54,6 +54,36 @@ func TestCreateReplaySession(t *testing.T) {
 			wantID:   "sess-col",
 			wantName: "api-tests",
 		},
+		{
+			name: "creates HTTP session via explicit kind",
+			args: map[string]any{"kind": "HTTP"},
+			setup: func(m *testutil.MockHandler) {
+				m.On("CreateReplaySession", testutil.CreateReplaySessionResponse("sess-http"))
+			},
+			wantID: "sess-http",
+		},
+		{
+			name: "creates WS session via explicit kind",
+			args: map[string]any{"kind": "WS"},
+			setup: func(m *testutil.MockHandler) {
+				m.On("CreateReplaySession", testutil.CreateReplaySessionResponse("sess-ws"))
+			},
+			wantID: "sess-ws",
+		},
+		{
+			name: "creates session with lowercase kind (normalized)",
+			args: map[string]any{"kind": "ws"},
+			setup: func(m *testutil.MockHandler) {
+				m.On("CreateReplaySession", testutil.CreateReplaySessionResponse("sess-ws-lower"))
+			},
+			wantID: "sess-ws-lower",
+		},
+		{
+			name:    "rejects invalid kind value",
+			args:    map[string]any{"kind": "FTP"},
+			setup:   func(m *testutil.MockHandler) {},
+			wantErr: true,
+		},
 	}
 
 	for _, tt := range tests {

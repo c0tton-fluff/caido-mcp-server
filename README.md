@@ -50,7 +50,7 @@ Both share the same auth token, the same Go SDK, and the same codebase.
 
 **Built-in security and performance:**
 
-- Credential redaction - Authorization, Cookie, and API key headers are redacted in tool output
+- Credential redaction - Authorization, Cookie, and API key headers are redacted in tool output by default; opt out with `CAIDO_MCP_ALLOW_SENSITIVE` (see [Revealing sensitive headers](#revealing-sensitive-headers))
 - Session cookie jar - RFC 6265 jar per replay session; `Set-Cookie` from a response is auto-attached to the next `send_request` against the same session
 - Response fingerprinting - auto-detects content kind (json/html/xml/text/binary) so agents know what they're dealing with
 - Adaptive body limits - JSON gets 4KB, HTML 3KB, binary 200B (override with explicit `bodyLimit`)
@@ -64,6 +64,27 @@ Both share the same auth token, the same Go SDK, and the same codebase.
 The `caido_send_request` tool maintains an in-memory `http.CookieJar` per replay session. Cookies set via `Set-Cookie` in any response are stored and auto-injected into subsequent requests targeting the same RFC 6265 domain/path. Pass `useCookieJar: false` to a single call to disable injection (useful for session-fixation testing or to verify auth gates). Use `caido_clear_session_cookies` to wipe a session jar between test runs and `caido_get_session_cookies` to introspect what is stored (cookie values are not returned, only metadata).
 
 The output of `caido_send_request` includes a `cookieJar` block with `injectedCookies` (names sent on this call) and `storedCookies` (names captured from `Set-Cookie`), so the LLM can verify the chain stayed authenticated.
+
+### Revealing sensitive headers
+
+By default, sensitive headers (`Authorization`, `Cookie`, `Set-Cookie`, `Proxy-Authorization`, `X-Api-Key`, `X-Auth-Token`, `X-CSRF-Token`, `X-XSRF-Token`) are replaced with `[REDACTED]` in tool output to avoid leaking credentials into the model context. On an authorized engagement where you need the real values — to analyze or replay a captured authenticated request, or to produce a working `caido_export_curl` PoC — set `CAIDO_MCP_ALLOW_SENSITIVE` to a truthy value (`1`, `true`):
+
+```json
+{
+  "mcpServers": {
+    "caido": {
+      "command": "caido-mcp-server",
+      "args": ["serve"],
+      "env": {
+        "CAIDO_URL": "http://127.0.0.1:8080",
+        "CAIDO_MCP_ALLOW_SENSITIVE": "true"
+      }
+    }
+  }
+}
+```
+
+When enabled, real credential values flow through tool output to the model; leave it unset to keep redaction. This toggle does not affect the session cookie jar, which only ever reports cookie names and metadata, never values.
 
 ---
 

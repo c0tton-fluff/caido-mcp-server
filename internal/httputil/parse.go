@@ -5,6 +5,8 @@ import (
 	"bytes"
 	"encoding/base64"
 	"io"
+	"os"
+	"strconv"
 	"strings"
 )
 
@@ -21,6 +23,18 @@ var sensitiveHeaders = map[string]bool{
 	"x-auth-token":        true,
 	"x-csrf-token":        true,
 	"x-xsrf-token":        true,
+}
+
+// allowSensitiveHeaders reports whether sensitive-header redaction is disabled.
+// Opt in by setting CAIDO_ALLOW_SENSITIVE_HEADERS to a truthy value accepted by
+// strconv.ParseBool (1, t, T, TRUE, true, True); unset, empty, or unparseable
+// values keep the default redact-everything behavior. Read per ParseRaw call so
+// it stays testable and runtime-configurable. Intended for authorized
+// proxy/pentest work where replaying a captured authenticated request needs its
+// real Authorization/Cookie/CSRF headers.
+func allowSensitiveHeaders() bool {
+	allow, _ := strconv.ParseBool(os.Getenv("CAIDO_ALLOW_SENSITIVE_HEADERS"))
+	return allow
 }
 
 type Header struct {
@@ -68,6 +82,7 @@ func ParseRaw(
 	}
 
 	if includeHeaders {
+		allowSensitive := allowSensitiveHeaders()
 		reader := bufio.NewReader(bytes.NewReader(headerPart))
 		firstLine, err := reader.ReadString('\n')
 		if err == nil || err == io.EOF {
@@ -80,7 +95,7 @@ func ParseRaw(
 				if idx := strings.Index(line, ":"); idx > 0 {
 					name := strings.TrimSpace(line[:idx])
 					value := strings.TrimSpace(line[idx+1:])
-					if sensitiveHeaders[strings.ToLower(name)] {
+					if !allowSensitive && sensitiveHeaders[strings.ToLower(name)] {
 						value = "[REDACTED]"
 					}
 					result.Headers = append(result.Headers, Header{

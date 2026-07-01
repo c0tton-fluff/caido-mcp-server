@@ -154,6 +154,66 @@ func TestParseRaw_SensitiveHeaderRedaction(t *testing.T) {
 	}
 }
 
+func TestParseRaw_SensitiveHeadersAllowedWhenOptedIn(t *testing.T) {
+	t.Setenv("CAIDO_ALLOW_SENSITIVE_HEADERS", "1")
+	raw := []byte(
+		"GET / HTTP/1.1\r\n" +
+			"Host: example.com\r\n" +
+			"Authorization: Bearer secret-token\r\n" +
+			"Cookie: session=abc123\r\n" +
+			"X-Api-Key: key-456\r\n" +
+			"Content-Type: text/html\r\n" +
+			"\r\n",
+	)
+	result := ParseRaw(raw, true, false, 0, 0)
+	if result == nil {
+		t.Fatal("expected non-nil result")
+	}
+
+	expects := map[string]string{
+		"Host":          "example.com",
+		"Authorization": "Bearer secret-token",
+		"Cookie":        "session=abc123",
+		"X-Api-Key":     "key-456",
+		"Content-Type":  "text/html",
+	}
+
+	for _, h := range result.Headers {
+		want, ok := expects[h.Name]
+		if !ok {
+			t.Fatalf("unexpected header: %s", h.Name)
+		}
+		if h.Value != want {
+			t.Fatalf(
+				"header %s: want %q, got %q",
+				h.Name, want, h.Value,
+			)
+		}
+	}
+}
+
+func TestParseRaw_SensitiveHeadersRedactedOnInvalidOptIn(t *testing.T) {
+	// An unparseable CAIDO_ALLOW_SENSITIVE_HEADERS must fail safe: keep redaction.
+	t.Setenv("CAIDO_ALLOW_SENSITIVE_HEADERS", "definitely-not-a-bool")
+	raw := []byte(
+		"GET / HTTP/1.1\r\n" +
+			"Authorization: Bearer secret-token\r\n" +
+			"\r\n",
+	)
+	result := ParseRaw(raw, true, false, 0, 0)
+	if result == nil {
+		t.Fatal("expected non-nil result")
+	}
+	for _, h := range result.Headers {
+		if h.Name == "Authorization" && h.Value != "[REDACTED]" {
+			t.Fatalf(
+				"Authorization: want %q, got %q",
+				"[REDACTED]", h.Value,
+			)
+		}
+	}
+}
+
 func TestParseRaw_FirstLine(t *testing.T) {
 	raw := []byte("POST /api HTTP/1.1\r\nHost: test.com\r\n\r\n")
 	result := ParseRaw(raw, true, false, 0, 0)

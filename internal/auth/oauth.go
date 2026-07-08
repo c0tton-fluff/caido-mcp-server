@@ -218,7 +218,7 @@ func (a *Authenticator) waitForToken(
 			"failed to connect to websocket: %w", err,
 		)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	initMsg := map[string]any{
 		"type": "connection_init",

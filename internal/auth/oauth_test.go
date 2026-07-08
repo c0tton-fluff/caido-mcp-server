@@ -63,6 +63,7 @@ func TestParseWSTokenPayload_Success(t *testing.T) {
 	}
 	if got == nil {
 		t.Fatal("expected a token, got nil")
+		return
 	}
 	if got.AccessToken != "access-abc" {
 		t.Errorf("AccessToken = %q, want %q", got.AccessToken, "access-abc")

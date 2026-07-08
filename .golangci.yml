@@ -1,0 +1,30 @@
+version: "2"
+
+linters:
+  enable:
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+  settings:
+    errcheck:
+      # check-blank is intentionally left at its default (false): the codebase
+      # has deliberate `_ = ...`/`_, _ = ...` discards (SetReadDeadline,
+      # conn.Close, deferred Close, etc.) that are genuinely ignorable.
+      exclude-functions:
+        # Writing a startup banner / best-effort diagnostic line to stderr is
+        # idiomatic; a failed write to stderr is not actionable.
+        - fmt.Fprint(os.Stderr)
+        - fmt.Fprintf(os.Stderr)
+        - fmt.Fprintln(os.Stderr)
+        - (*os.File).Write
+        - (*os.File).WriteString
+
+formatters:
+  enable:
+    - gofmt
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0

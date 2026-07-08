@@ -58,7 +58,7 @@ func (m *MockHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	if !ok || resp == nil {
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(map[string]any{
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"errors": []map[string]string{
 				{"message": "no mock for operation: " + req.OperationName},
 			},
@@ -68,7 +68,7 @@ func (m *MockHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]json.RawMessage{
+	_ = json.NewEncoder(w).Encode(map[string]json.RawMessage{
 		"data": resp,
 	})
 }

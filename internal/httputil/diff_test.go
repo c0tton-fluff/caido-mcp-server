@@ -22,6 +22,7 @@ func TestResponseCacheIdentical(t *testing.T) {
 	result := cache.GetAndSet("sess-1", digest)
 	if result == nil {
 		t.Fatal("expected diff result")
+		return
 	}
 	if !result.Same {
 		t.Fatal("expected same=true")
@@ -35,6 +36,7 @@ func TestResponseCacheStatusChange(t *testing.T) {
 	result := cache.GetAndSet("sess-1", ResponseDigest{StatusCode: 403, BodyHash: 222, BodySize: 50})
 	if result == nil {
 		t.Fatal("expected diff result")
+		return
 	}
 	if result.Same {
 		t.Fatal("expected same=false")
@@ -57,6 +59,7 @@ func TestResponseCacheBodySizeChangeSameHash(t *testing.T) {
 	result := cache.GetAndSet("sess-1", ResponseDigest{StatusCode: 200, BodyHash: 999, BodySize: 250})
 	if result == nil {
 		t.Fatal("expected diff result")
+		return
 	}
 	if result.Same {
 		t.Fatal("expected same=false when body size differs despite equal hash")

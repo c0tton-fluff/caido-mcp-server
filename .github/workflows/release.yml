@@ -30,7 +30,7 @@ jobs:
   release:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-go@v6
         with:
@@ -60,7 +60,9 @@ jobs:
         run: cd dist && sha256sum * > sha256sums.txt
 
       - name: Publish release
-        uses: softprops/action-gh-release@v3
+        # SHA-pinned (not @v3): this action has contents:write and a tag can
+        # be moved, so a full commit SHA is required to trust what runs here.
+        uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b # v3.0.1
         with:
           tag_name: ${{ steps.version.outputs.VERSION }}
           files: dist/*

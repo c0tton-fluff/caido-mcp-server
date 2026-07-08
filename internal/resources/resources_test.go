@@ -43,7 +43,7 @@ func newResourceTestEnv(t *testing.T) *resourceTestEnv {
 	if err != nil {
 		t.Fatalf("mcp client connect: %v", err)
 	}
-	t.Cleanup(func() { session.Close() })
+	t.Cleanup(func() { _ = session.Close() })
 
 	return &resourceTestEnv{
 		Mock:   env.Mock,

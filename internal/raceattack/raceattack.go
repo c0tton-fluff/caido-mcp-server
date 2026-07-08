@@ -130,7 +130,7 @@ func runOne(c *conn, release <-chan struct{}, primed, done *sync.WaitGroup, body
 	}
 	<-release
 	start := time.Now()
-	if _, werr := c.Conn.Write(last); werr != nil {
+	if _, werr := c.Write(last); werr != nil {
 		c.res.Error = fmt.Sprintf("final write: %v", werr)
 		return
 	}
@@ -254,7 +254,7 @@ func clampBodyLimit(bodyLimit int) int {
 func closeAll(conns []conn) {
 	for i := range conns {
 		if conns[i].Conn != nil {
-			_ = conns[i].Conn.Close()
+			_ = conns[i].Close()
 		}
 	}
 }

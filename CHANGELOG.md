@@ -5,6 +5,7 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Security
+- **Bumped `modelcontextprotocol/go-sdk` v1.2.0 -> v1.4.1**, fixing 4 govulncheck-reported advisories (GO-2026-5771, GO-2026-4773, GO-2026-4770, GO-2026-4569). Requires Go 1.25+.
 - **Raw-HTTP credential redaction is now enforced everywhere output leaves the server.** The `caido://requests/{id}` resource and `caido_get_automate_session` previously emitted base64-decoded raw requests/responses (and fuzz templates) with `Authorization`, `Cookie`, and `Set-Cookie` in cleartext, bypassing the redaction that only lived inside `ParseRaw`. A new `httputil.RedactRawHeaders` choke-point redacts sensitive header values in any raw dump (still honoring the `CAIDO_ALLOW_SENSITIVE_HEADERS` opt-out).
 
 ### Fixed

@@ -36,6 +36,7 @@ func TestTokenStore_SaveLoadDeleteRoundtrip(t *testing.T) {
 	}
 	if got == nil {
 		t.Fatal("Load after Save = nil, want a token")
+		return
 	}
 	if got.AccessToken != want.AccessToken {
 		t.Errorf("AccessToken = %q, want %q", got.AccessToken, want.AccessToken)

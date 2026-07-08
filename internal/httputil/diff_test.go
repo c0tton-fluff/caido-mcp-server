@@ -47,6 +47,25 @@ func TestResponseCacheStatusChange(t *testing.T) {
 	}
 }
 
+func TestResponseCacheBodySizeChangeSameHash(t *testing.T) {
+	cache := &ResponseCache{entries: make(map[string]ResponseDigest)}
+
+	cache.GetAndSet("sess-1", ResponseDigest{StatusCode: 200, BodyHash: 999, BodySize: 100})
+	// Equal BodyHash + StatusCode but a larger BodySize: the responses share
+	// the first bodyLimit bytes yet differ in total size, so they are NOT
+	// identical.
+	result := cache.GetAndSet("sess-1", ResponseDigest{StatusCode: 200, BodyHash: 999, BodySize: 250})
+	if result == nil {
+		t.Fatal("expected diff result")
+	}
+	if result.Same {
+		t.Fatal("expected same=false when body size differs despite equal hash")
+	}
+	if result.SizeChange != "+150 bytes" {
+		t.Fatalf("want '+150 bytes', got %q", result.SizeChange)
+	}
+}
+
 func TestResponseCacheSeparateSessions(t *testing.T) {
 	cache := &ResponseCache{entries: make(map[string]ResponseDigest)}
 	d1 := ResponseDigest{StatusCode: 200, BodyHash: 111, BodySize: 100}

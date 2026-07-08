@@ -2,6 +2,15 @@ package httputil
 
 import "fmt"
 
+// DefaultPort returns the default TCP port for an HTTP(S) connection:
+// 443 when TLS is used, 80 otherwise.
+func DefaultPort(useTLS bool) int {
+	if useTLS {
+		return 443
+	}
+	return 80
+}
+
 func BuildURL(
 	isTLS bool, host string, port int, path, query string,
 ) string {

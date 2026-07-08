@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"os"
 	"sync"
 	"time"
 
@@ -95,6 +96,19 @@ func Send(
 		)
 	}
 	if cacheReplacement {
+		// The failed session was the auto-created default (not a
+		// user-supplied one). Caido 0.57 leaves it as an empty orphan, so
+		// best-effort delete the session we are evicting from the cache to
+		// avoid leaking one replay session per process on the first send.
+		if _, delErr := client.Replay.DeleteSessions(
+			ctx, []string{sessionID},
+		); delErr != nil {
+			fmt.Fprintf(
+				os.Stderr,
+				"replay: failed to delete orphaned session %s: %v\n",
+				sessionID, delErr,
+			)
+		}
 		ResetDefaultSession(newID)
 	}
 	// The fresh session is seeded with the request; just start the task.

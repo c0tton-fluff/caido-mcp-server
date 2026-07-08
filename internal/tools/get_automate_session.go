@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/c0tton-fluff/caido-mcp-server/internal/httputil"
 	caido "github.com/caido-community/sdk-go"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -64,7 +65,7 @@ func getAutomateSessionHandler(
 				session.Raw,
 			)
 			if decErr == nil {
-				requestTemplate = string(decoded)
+				requestTemplate = httputil.RedactRawHeaders(string(decoded))
 			}
 		}
 

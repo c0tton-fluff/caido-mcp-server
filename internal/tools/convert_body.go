@@ -9,9 +9,6 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// maxConvertBodyBytes caps the request body size accepted by the converter.
-const maxConvertBodyBytes = 1048576
-
 // ConvertBodyInput is the input for the convert_body tool.
 type ConvertBodyInput struct {
 	Body string `json:"body" jsonschema:"required,Body content to convert"`
@@ -37,9 +34,9 @@ func convertBodyHandler(
 		req *mcp.CallToolRequest,
 		input ConvertBodyInput,
 	) (*mcp.CallToolResult, ConvertBodyOutput, error) {
-		if len(input.Body) > maxConvertBodyBytes {
+		if len(input.Body) > maxRawRequestBytes {
 			return nil, ConvertBodyOutput{}, fmt.Errorf(
-				"body exceeds max length of %d bytes", maxConvertBodyBytes)
+				"body exceeds max length of %d bytes", maxRawRequestBytes)
 		}
 
 		from := httputil.BodyFormat(input.From)

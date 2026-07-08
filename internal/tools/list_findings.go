@@ -44,13 +44,7 @@ func listFindingsHandler(
 		req *mcp.CallToolRequest,
 		input ListFindingsInput,
 	) (*mcp.CallToolResult, ListFindingsOutput, error) {
-		limit := input.Limit
-		if limit <= 0 {
-			limit = 50
-		}
-		if limit > 100 {
-			limit = 100
-		}
+		limit := clampLimit(input.Limit, 50, 100)
 
 		opts := &caido.ListFindingsOptions{
 			First: &limit,
@@ -76,12 +70,9 @@ func listFindingsHandler(
 			),
 		}
 
-		if conn.PageInfo.HasNextPage {
-			output.HasMore = true
-			if conn.PageInfo.EndCursor != nil {
-				output.NextCursor = *conn.PageInfo.EndCursor
-			}
-		}
+		output.HasMore, output.NextCursor = pageCursor(
+			conn.PageInfo.HasNextPage, conn.PageInfo.EndCursor,
+		)
 
 		for _, edge := range conn.Edges {
 			f := edge.Node

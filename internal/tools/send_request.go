@@ -53,11 +53,10 @@ type CookieJarStatus struct {
 // RFC 6265 cookie matching against the session jar.
 func buildRequestURL(host string, port int, useTLS bool, raw string) *url.URL {
 	scheme := "http"
-	defaultPort := 80
 	if useTLS {
 		scheme = "https"
-		defaultPort = 443
 	}
+	defaultPort := httputil.DefaultPort(useTLS)
 	hostHeader := host
 	if port != 0 && port != defaultPort {
 		hostHeader = fmt.Sprintf("%s:%d", host, port)
@@ -96,10 +95,8 @@ func sendRequestHandler(
 				"raw HTTP request is required",
 			)
 		}
-		if len(input.Raw) > 1048576 {
-			return nil, SendRequestOutput{}, fmt.Errorf(
-				"raw request exceeds max length of 1MB",
-			)
+		if err := checkRawSize("raw", input.Raw); err != nil {
+			return nil, SendRequestOutput{}, err
 		}
 
 		raw := httputil.NormalizeCRLF(input.Raw)
@@ -132,11 +129,7 @@ func sendRequestHandler(
 		}
 		port := input.Port
 		if port == 0 {
-			if useTLS {
-				port = 443
-			} else {
-				port = 80
-			}
+			port = httputil.DefaultPort(useTLS)
 		}
 
 		sessionID, err := replay.GetOrCreateSession(

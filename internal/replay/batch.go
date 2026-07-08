@@ -135,11 +135,7 @@ func executeSingle(
 		useTLS = *br.TLS
 	}
 	if port == 0 {
-		if useTLS {
-			port = 443
-		} else {
-			port = 80
-		}
+		port = httputil.DefaultPort(useTLS)
 	}
 
 	// Create a session seeded with this request (0.57: a fresh session

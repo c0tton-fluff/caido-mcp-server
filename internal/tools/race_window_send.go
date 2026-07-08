@@ -17,9 +17,6 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// maxRaceRaw caps the byte length of a single raw request.
-const maxRaceRaw = 1048576
-
 // RaceRequestInput is a single raw HTTP/1.1 request to send across the barrier.
 type RaceRequestInput struct {
 	Label string `json:"label,omitempty" jsonschema:"Identifier for this request in results (e.g. attempt-1)"`
@@ -95,6 +92,8 @@ func buildRaceSend(input RaceWindowSendInput) (raceattack.Target, []raceattack.R
 	}
 	port := input.Port
 	if port == 0 {
+		// Intentionally defaults to 443 regardless of TLS (TLS-unaware); does
+		// not use httputil.DefaultPort so behavior is unchanged for now.
 		port = 443
 	}
 	useTLS := true
@@ -108,7 +107,7 @@ func buildRaceSend(input RaceWindowSendInput) (raceattack.Target, []raceattack.R
 				"requests[%d]: raw HTTP request is required", i,
 			)
 		}
-		if len(r.Raw) > maxRaceRaw {
+		if len(r.Raw) > maxRawRequestBytes {
 			return raceattack.Target{}, nil, fmt.Errorf(
 				"requests[%d]: raw request exceeds 1MB limit", i,
 			)

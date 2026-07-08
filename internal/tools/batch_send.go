@@ -59,10 +59,8 @@ func batchSendHandler(
 					"requests[%d]: raw HTTP request is required", i,
 				)
 			}
-			if len(r.Raw) > 1048576 {
-				return nil, BatchSendOutput{}, fmt.Errorf(
-					"requests[%d]: raw request exceeds 1MB limit", i,
-				)
+			if err := checkRawSize(fmt.Sprintf("requests[%d]", i), r.Raw); err != nil {
+				return nil, BatchSendOutput{}, err
 			}
 			if r.Label == "" {
 				input.Requests[i].Label = fmt.Sprintf("req-%d", i+1)

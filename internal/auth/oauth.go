@@ -271,6 +271,20 @@ func (a *Authenticator) waitForToken(
 func (a *Authenticator) readTokenFromWS(
 	ctx context.Context, conn *websocket.Conn,
 ) (*StoredToken, error) {
+	// gorilla/websocket's ReadJSON ignores ctx and has no read deadline
+	// here, so a cancelled ctx cannot unblock a blocked read. Close the
+	// connection on cancellation to force the read to return; the done
+	// channel stops this watcher when the function returns.
+	done := make(chan struct{})
+	defer close(done)
+	go func() {
+		select {
+		case <-ctx.Done():
+			_ = conn.Close()
+		case <-done:
+		}
+	}()
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -280,6 +294,11 @@ func (a *Authenticator) readTokenFromWS(
 
 		var msg map[string]any
 		if err := conn.ReadJSON(&msg); err != nil {
+			// If cancellation triggered the close above, surface the
+			// context error rather than the resulting read failure.
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
 			return nil, fmt.Errorf(
 				"failed to read message: %w", err,
 			)

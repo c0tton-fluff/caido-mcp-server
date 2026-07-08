@@ -2,6 +2,8 @@ package replay
 
 import (
 	"context"
+	"fmt"
+	"os"
 	"sync"
 
 	caido "github.com/caido-community/sdk-go"
@@ -82,5 +84,13 @@ func (p *SessionPool) Cleanup(ctx context.Context) {
 	if len(ids) == 0 {
 		return
 	}
-	_, _ = p.client.Replay.DeleteSessions(ctx, ids)
+	// Best-effort cleanup: log a delete failure to stderr so a leaked batch
+	// session is observable, but never fail the batch on it.
+	if _, err := p.client.Replay.DeleteSessions(ctx, ids); err != nil {
+		fmt.Fprintf(
+			os.Stderr,
+			"replay: failed to delete %d batch session(s): %v\n",
+			len(ids), err,
+		)
+	}
 }

@@ -101,10 +101,7 @@ func exportCurlHandler(
 		}
 
 		hostPort := r.Host
-		defaultPort := 80
-		if r.IsTls {
-			defaultPort = 443
-		}
+		defaultPort := httputil.DefaultPort(r.IsTls)
 		if r.Port != 0 && r.Port != defaultPort {
 			hostPort = fmt.Sprintf("%s:%d", r.Host, r.Port)
 		}

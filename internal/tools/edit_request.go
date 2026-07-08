@@ -184,11 +184,7 @@ func editRequestHandler(
 		}
 
 		if port == 0 {
-			if useTLS {
-				port = 443
-			} else {
-				port = 80
-			}
+			port = httputil.DefaultPort(useTLS)
 		}
 
 		sessionID, err := replay.GetOrCreateSession(ctx, client, input.SessionID)

@@ -33,10 +33,10 @@ func runWorkflowHandler(
 		req *mcp.CallToolRequest,
 		input RunWorkflowInput,
 	) (*mcp.CallToolResult, RunWorkflowOutput, error) {
-		if input.Input != nil && len(*input.Input) > 1048576 {
-			return nil, RunWorkflowOutput{}, fmt.Errorf(
-				"input exceeds max length of 1MB",
-			)
+		if input.Input != nil {
+			if err := checkRawSize("input", *input.Input); err != nil {
+				return nil, RunWorkflowOutput{}, err
+			}
 		}
 
 		switch input.Type {

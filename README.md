@@ -50,7 +50,8 @@ Both share the same auth token, the same Go SDK, and the same codebase.
 
 **Built-in security and performance:**
 
-- Credential redaction - Authorization, Cookie, and API key headers are redacted in tool output by default; opt out with `CAIDO_ALLOW_SENSITIVE_HEADERS` (see [Revealing sensitive headers](#revealing-sensitive-headers))
+- Credential redaction - Authorization, Cookie, and API key headers are redacted in tool output by default (including raw request/response dumps and the `caido://requests/{id}` resource); opt out with `CAIDO_ALLOW_SENSITIVE_HEADERS` (see [Revealing sensitive headers](#revealing-sensitive-headers))
+- Tool annotations - every tool declares `readOnlyHint`/`destructiveHint`/`idempotentHint`/`openWorldHint` so MCP clients can distinguish read-only, destructive, and external-network tools
 - Session cookie jar - RFC 6265 jar per replay session; `Set-Cookie` from a response is auto-attached to the next `send_request` against the same session
 - Response fingerprinting - auto-detects content kind (json/html/xml/text/binary) so agents know what they're dealing with
 - Adaptive body limits - JSON gets 4KB, HTML 3KB, binary 200B (override with explicit `bodyLimit`)
@@ -162,12 +163,13 @@ This opens your browser for OAuth authentication and saves the token to `~/.caid
 "What's in scope?"
 ```
 
-### MCP Tools (64)
+### MCP Tools (66)
 
 | Tool | Description |
 |------|-------------|
 | `caido_list_requests` | List requests with HTTPQL filter and pagination |
 | `caido_get_request` | Get request details (metadata, headers, body). 2KB body limit default |
+| `caido_diff_responses` | Structural diff of two responses by Caido request ID: status/size change flags and a compact body/header summary (never dumps full bodies) |
 | `caido_send_request` | Send HTTP request via Replay, returns response inline. Polls up to 10s. Auto-injects session cookies and persists `Set-Cookie` (toggle with `useCookieJar`) |
 | `caido_batch_send` | Send multiple requests in parallel (BAC sweeps, parameter fuzzing, endpoint sweeps). Max 50 per batch |
 | `caido_edit_request` | Modify and resend an existing request. Preserves auth/cookies while changing method, path, headers, or body |
@@ -193,6 +195,7 @@ This opens your browser for OAuth authentication and saves the token to `~/.caid
 | `caido_export_findings` | Export findings for reporting |
 | `caido_get_sitemap` | Browse sitemap hierarchy |
 | `caido_list_scopes` | List target scopes |
+| `caido_is_in_scope` | Check whether a host or URL is in the project scope; returns the matching scope and the allow/deny rule that decided it |
 | `caido_create_scope` | Create new scope with allow/deny lists |
 | `caido_rename_scope` | Rename a scope |
 | `caido_delete_scope` | Delete a scope |
@@ -231,7 +234,7 @@ This opens your browser for OAuth authentication and saves the token to `~/.caid
 | `caido_convert_body` | Convert a request body between JSON, form-urlencoded, XML, and multipart |
 | `caido_race_window_send` | Fire raw HTTP/1.1 requests with synchronized last-byte send for race-condition testing (bypasses Caido proxy) |
 
-### MCP Resources (4)
+### MCP Resources (6)
 
 Read-only data exposed via the MCP resources protocol. Agents can read these without consuming tool calls.
 
@@ -241,6 +244,8 @@ Read-only data exposed via the MCP resources protocol. Agents can read these wit
 | `caido://replay-sessions/{id}` | Replay session details with entry list |
 | `caido://sitemap` | Root domains from the sitemap |
 | `caido://findings` | Security finding summaries (up to 100) |
+| `caido://scopes` | All target scopes with their allow/deny rules |
+| `caido://project` | Current project, instance version, and connection status |
 
 <details>
 <summary>Parameter reference</summary>
@@ -271,6 +276,11 @@ Read-only data exposed via the MCP resources protocol. Agents can read these wit
 | `port` | int | Target port |
 | `tls` | bool | Use HTTPS (default true) |
 | `sessionId` | string | Replay session (auto-managed if omitted) |
+| `bodyLimit` | int | Response body byte limit (default 2000) |
+| `bodyOffset` | int | Response body byte offset (default 0) |
+| `useCookieJar` | bool | Auto-inject session cookies and persist `Set-Cookie` (default true); set false to disable for this call only |
+| `includeBody` | bool | Include response body text (default true); the fingerprint is always populated |
+| `marker` | string | String to search for in the response body; when set, `output.reflected` reports whether it was found |
 
 #### caido_get_replay_entry
 
@@ -456,6 +466,12 @@ caido-cli raw 'GET /api/users HTTP/1.1\r\nHost: target.com\r\n\r\n'
 caido-cli raw -f request.txt --host target.com --port 8443
 echo -n 'GET / HTTP/1.1\r\nHost: example.com\r\n\r\n' | caido-cli raw -
 
+# Parallel requests via Replay (BAC sweeps, param fuzzing, endpoint sweeps)
+caido-cli batch sweep https://target.com/api/profile -t "owner=eyJ1...,cross=eyJ2...,noauth"
+caido-cli batch fuzz "https://target.com/api/search?q=test" -p q -v "test,test',1 OR 1=1" -H "Authorization: Bearer eyJ..."
+caido-cli batch ep -t eyJ... https://target.com/dashboard https://target.com/admin
+caido-cli batch file batch.json
+
 # Browse proxy history
 caido-cli history
 caido-cli history -f 'req.host.eq:"target.com"' -n 20
@@ -476,6 +492,7 @@ caido-cli encode hex "test"
 | `status` | Check Caido instance health and auth token |
 | `send METHOD URL` | Send structured HTTP request via Replay API |
 | `raw` | Send raw HTTP request (argument, file with `-f`, or stdin with `-`) |
+| `batch MODE` | Parallel requests via Replay: `sweep` (N tokens), `fuzz` (N values), `ep` (N URLs), `file` (JSON spec) |
 | `history` | List proxy history with HTTPQL filtering |
 | `request ID` | Get full request/response by ID |
 | `encode TYPE VALUE` | Encode value (`url`, `base64`, `hex`) |
@@ -525,7 +542,7 @@ MCP server logs: `~/.cache/claude-cli-nodejs/*/mcp-logs-caido/`
 
 ## Security
 
-Sensitive HTTP headers (Authorization, Cookie, Set-Cookie, API keys) are automatically redacted in all tool output to prevent credential leakage to LLM context. All string inputs are length-validated server-side. Request batch sizes are capped.
+Sensitive HTTP headers (Authorization, Cookie, Set-Cookie, API keys) are redacted everywhere output leaves the server - structured tool output, raw request/response dumps, fuzz templates, and the `caido://requests/{id}` resource all pass through a single redaction choke-point to prevent credential leakage to LLM context. On an authorized engagement you can opt out with `CAIDO_ALLOW_SENSITIVE_HEADERS` (see [Revealing sensitive headers](#revealing-sensitive-headers)). All string inputs are length-validated server-side, and request batch sizes are capped.
 
 PAT tokens and OAuth tokens are stored with 0600 permissions and never appear in process arguments or log output.
 

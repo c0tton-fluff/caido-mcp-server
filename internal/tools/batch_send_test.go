@@ -101,3 +101,127 @@ func TestBatchSend(t *testing.T) {
 		})
 	}
 }
+
+// TestBatchSendFingerprintExpansion covers the Chunk 4 additions:
+// includeBody gating (default false), marker/reflected, and the enriched
+// fingerprint fields, which for batch_send are computed from the same
+// (already bodyLimit-truncated) response replay.RunBatch returns, since
+// the raw undecoded response is internal to internal/replay.
+func TestBatchSendFingerprintExpansion(t *testing.T) {
+	rawResp := rawHTTPResponseWithHeaders(
+		200,
+		"Set-Cookie: token=zzz; Path=/\r\n",
+		"<html><head><title>Batch Page</title></head><body>reflect-me</body></html>",
+	)
+
+	setup := func(m *testutil.MockHandler) {
+		m.On("CreateReplaySession", testutil.CreateReplaySessionResponse("batch-fp"))
+		m.On("StartReplayTask", testutil.StartReplayTaskResponse())
+		m.On("GetReplaySession", testutil.GetReplaySessionResponse("batch-fp", "be-fp"))
+		m.On("GetReplayEntry", entryResponseWithRaw("be-fp", "br-fp", rawResp, 200))
+		m.On("DeleteReplaySessions", map[string]any{
+			"deleteReplaySessions": map[string]any{
+				"deletedIds": []string{},
+			},
+		})
+	}
+
+	oneRequest := []map[string]any{
+		{"label": "a", "raw": "GET /a HTTP/1.1\r\nHost: example.com\r\n\r\n"},
+	}
+
+	t.Run("body omitted by default but fingerprint populated", func(t *testing.T) {
+		env := testutil.NewMCPTestEnv(t, func(s *mcp.Server, c *caido.Client) {
+			tools.RegisterBatchSendTool(s, c)
+		})
+		setup(env.Mock)
+
+		result := env.CallTool(t, "caido_batch_send", map[string]any{
+			"requests": oneRequest,
+		})
+		if result.IsError {
+			t.Fatalf("unexpected error result: %+v", result)
+		}
+		output := testutil.UnmarshalToolResult[tools.BatchSendOutput](t, result)
+		if len(output.Results) != 1 {
+			t.Fatalf("want 1 result, got %d", len(output.Results))
+		}
+		r := output.Results[0]
+		if r.Response == nil {
+			t.Fatalf("expected a response")
+		}
+		if r.Response.Body != "" {
+			t.Fatalf("want empty body when includeBody defaults false, got %q", r.Response.Body)
+		}
+		fp := r.Response.Fingerprint
+		if fp == nil {
+			t.Fatalf("expected a fingerprint")
+		}
+		if fp.StatusCode != 200 {
+			t.Fatalf("want fingerprint statusCode 200, got %d", fp.StatusCode)
+		}
+		if fp.Title != "Batch Page" {
+			t.Fatalf("want title %q, got %q", "Batch Page", fp.Title)
+		}
+		if fp.WordCount == 0 {
+			t.Fatalf("want non-zero wordCount")
+		}
+	})
+
+	t.Run("includeBody true includes body text", func(t *testing.T) {
+		env := testutil.NewMCPTestEnv(t, func(s *mcp.Server, c *caido.Client) {
+			tools.RegisterBatchSendTool(s, c)
+		})
+		setup(env.Mock)
+
+		result := env.CallTool(t, "caido_batch_send", map[string]any{
+			"requests":    oneRequest,
+			"includeBody": true,
+		})
+		if result.IsError {
+			t.Fatalf("unexpected error result: %+v", result)
+		}
+		output := testutil.UnmarshalToolResult[tools.BatchSendOutput](t, result)
+		if output.Results[0].Response == nil || output.Results[0].Response.Body == "" {
+			t.Fatalf("want body included, got %+v", output.Results[0].Response)
+		}
+	})
+
+	t.Run("marker sets reflected per result", func(t *testing.T) {
+		env := testutil.NewMCPTestEnv(t, func(s *mcp.Server, c *caido.Client) {
+			tools.RegisterBatchSendTool(s, c)
+		})
+		setup(env.Mock)
+
+		result := env.CallTool(t, "caido_batch_send", map[string]any{
+			"requests": oneRequest,
+			"marker":   "reflect-me",
+		})
+		if result.IsError {
+			t.Fatalf("unexpected error result: %+v", result)
+		}
+		output := testutil.UnmarshalToolResult[tools.BatchSendOutput](t, result)
+		r := output.Results[0]
+		if r.Reflected == nil || !*r.Reflected {
+			t.Fatalf("want reflected=true, got %+v", r.Reflected)
+		}
+	})
+
+	t.Run("no marker leaves reflected unset", func(t *testing.T) {
+		env := testutil.NewMCPTestEnv(t, func(s *mcp.Server, c *caido.Client) {
+			tools.RegisterBatchSendTool(s, c)
+		})
+		setup(env.Mock)
+
+		result := env.CallTool(t, "caido_batch_send", map[string]any{
+			"requests": oneRequest,
+		})
+		if result.IsError {
+			t.Fatalf("unexpected error result: %+v", result)
+		}
+		output := testutil.UnmarshalToolResult[tools.BatchSendOutput](t, result)
+		if output.Results[0].Reflected != nil {
+			t.Fatalf("want reflected unset when no marker given, got %v", *output.Results[0].Reflected)
+		}
+	})
+}

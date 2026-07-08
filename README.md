@@ -22,7 +22,7 @@
 
 Two ways to interact with your Caido proxy:
 
-- **MCP Server** - expose 64 tools and 4 read-only resources to AI assistants (Claude Code, Cursor, etc.) via the Model Context Protocol
+- **MCP Server** - expose 66 tools and 6 read-only resources to AI assistants (Claude Code, Cursor, etc.) via the Model Context Protocol
 - **CLI** - standalone terminal client for pentesters who prefer the command line
 
 Both share the same auth token, the same Go SDK, and the same codebase.
@@ -31,12 +31,12 @@ Both share the same auth token, the same Go SDK, and the same codebase.
 
 | Category | Capabilities |
 |----------|-------------|
-| **Proxy History** | Search requests with HTTPQL, get full request/response details |
+| **Proxy History** | Search requests with HTTPQL, get full request/response details, diff two responses |
 | **Replay** | Send HTTP requests, get response inline (status, headers, body). Per-session cookie jar auto-persists `Set-Cookie` between calls |
 | **Automate** | Access fuzzing sessions, results, and payloads. Start/pause/resume/cancel tasks |
 | **Findings** | Create, list, delete, and export security findings |
 | **Sitemap** | Browse discovered endpoints |
-| **Scopes** | Full lifecycle: create, rename, delete target scope definitions |
+| **Scopes** | Full lifecycle: create, rename, delete target scope definitions; check if a host/URL is in scope |
 | **Projects** | Full lifecycle: create, rename, select, delete projects |
 | **Workflows** | List, run, and toggle automation workflows |
 | **Tamper** | List, create, toggle, and delete Match & Replace rules |

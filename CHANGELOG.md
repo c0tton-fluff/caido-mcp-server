@@ -15,7 +15,11 @@ All notable changes to this project will be documented in this file.
 - **`caido_race_window_send` no longer stalls on keep-alive targets.** The response read was `io.ReadFull` on a fixed buffer with a 10s deadline, blocking ~10s per request against keep-alive servers; it is now EOF/idle-aware.
 
 ### Added
-- **MCP tool annotations** on all 64 tools (`readOnlyHint` / `destructiveHint` / `idempotentHint` / `openWorldHint`), so clients can distinguish read-only, destructive, and external-network tools (roadmap Chunk 5).
+- **MCP tool annotations** on all tools (`readOnlyHint` / `destructiveHint` / `idempotentHint` / `openWorldHint`), so clients can distinguish read-only, destructive, and external-network tools (roadmap Chunk 5).
+- **`caido_is_in_scope`** - check whether a host/URL is in the project scope, returning the matching rule (roadmap Chunk 8).
+- **`caido_diff_responses`** - structural diff (status/size/body) of two Caido-native request IDs (roadmap Chunk 4).
+- **`caido://scopes`** and **`caido://project`** read-only resources (roadmap Chunks 8 and 3). Tool/resource totals: 64 -> 66 tools, 4 -> 6 resources.
+- **Richer response fingerprint** - `send_request`/`batch_send` now surface status, title, redirect target, Set-Cookie names, and word count; `includeBody` (default true single / false batch) and a `marker` reflected-in-response check (roadmap Chunk 4).
 - Opt out of sensitive-header redaction via the `CAIDO_ALLOW_SENSITIVE_HEADERS` env var (#29).
 
 ### Changed

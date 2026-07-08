@@ -1,3 +1,7 @@
+// Package tools registers the MCP tools that let an agent drive Caido:
+// proxy history, replay/send, automate, findings, scopes, projects,
+// workflows, intercept, tamper rules, filters, and utilities. Each tool
+// lives in its own file and is listed in allTools.
 package tools
 
 import (
@@ -15,6 +19,7 @@ var allTools = []registerFunc{
 	// HTTP History
 	RegisterListRequestsTool,
 	RegisterGetRequestTool,
+	RegisterDiffResponsesTool,
 
 	// Automate (Fuzzing)
 	RegisterListAutomateSessionsTool,
@@ -52,6 +57,7 @@ var allTools = []registerFunc{
 
 	// Scopes
 	RegisterListScopesTool,
+	RegisterIsInScopeTool,
 	RegisterCreateScopeTool,
 	RegisterRenameScopeTool,
 	RegisterDeleteScopeTool,

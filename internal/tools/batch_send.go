@@ -3,7 +3,9 @@ package tools
 import (
 	"context"
 	"fmt"
+	"strings"
 
+	"github.com/c0tton-fluff/caido-mcp-server/internal/httputil"
 	"github.com/c0tton-fluff/caido-mcp-server/internal/replay"
 	caido "github.com/caido-community/sdk-go"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -14,6 +16,8 @@ type BatchSendInput struct {
 	Requests    []BatchRequestItem `json:"requests" jsonschema:"required,Array of requests to send in parallel (max 50)"`
 	Concurrency int                `json:"concurrency,omitempty" jsonschema:"Parallel session count (default 5, max 20)"`
 	BodyLimit   int                `json:"bodyLimit,omitempty" jsonschema:"Response body byte limit per request (default 2000)"`
+	IncludeBody *bool              `json:"includeBody,omitempty" jsonschema:"Include response body text per result (default false - bodies omitted to save tokens). The response fingerprint (title, redirect target, cookie names, word count) is always populated regardless of this setting."`
+	Marker      string             `json:"marker,omitempty" jsonschema:"Optional string to search for in each response body; when set, result.reflected reports whether it was found"`
 }
 
 // BatchRequestItem is a single request in the batch.
@@ -25,10 +29,24 @@ type BatchRequestItem struct {
 	TLS   *bool  `json:"tls,omitempty" jsonschema:"Use HTTPS (default true)"`
 }
 
+// BatchSendResult mirrors replay.BatchResult with the fingerprint-expansion
+// fields this tool adds (Reflected). It is a standalone type rather than
+// embedding replay.BatchResult so the MCP output schema stays a plain flat
+// object; internal/replay's wire shape is not owned by this tool.
+type BatchSendResult struct {
+	Label       string                  `json:"label"`
+	StatusCode  int                     `json:"statusCode,omitempty"`
+	RoundtripMs int                     `json:"roundtripMs,omitempty"`
+	Request     *httputil.ParsedMessage `json:"request,omitempty"`
+	Response    *httputil.ParsedMessage `json:"response,omitempty"`
+	Error       string                  `json:"error,omitempty"`
+	Reflected   *bool                   `json:"reflected,omitempty"`
+}
+
 // BatchSendOutput is the output of the batch_send tool.
 type BatchSendOutput struct {
-	Results []replay.BatchResult `json:"results"`
-	Summary string               `json:"summary"`
+	Results []BatchSendResult `json:"results"`
+	Summary string            `json:"summary"`
 }
 
 // batchSendHandler creates the handler function for batch_send.
@@ -87,20 +105,61 @@ func batchSendHandler(
 		if bodyLimit == 0 {
 			bodyLimit = 2000
 		}
+		includeBody := false
+		if input.IncludeBody != nil {
+			includeBody = *input.IncludeBody
+		}
 
-		results := replay.RunBatch(
+		rawResults := replay.RunBatch(
 			ctx, client, batchReqs, concurrency, bodyLimit,
 		)
 
-		// Build summary line.
+		// Enrich each result's fingerprint with response-only details
+		// (status code, title, redirect target, cookie names, word
+		// count) and, when requested, marker-reflection detection. This
+		// runs here rather than inside internal/replay because RunBatch
+		// already applies bodyLimit truncation before returning results,
+		// so title/word-count reflect that same (possibly truncated)
+		// body -- the same limitation the fingerprint itself already has.
+		// Build the summary line from the same pass.
+		results := make([]BatchSendResult, len(rawResults))
 		ok, fail := 0, 0
-		for _, r := range results {
+		for i, r := range rawResults {
 			if r.Error != "" {
 				fail++
 			} else {
 				ok++
 			}
+
+			item := BatchSendResult{
+				Label:       r.Label,
+				StatusCode:  r.StatusCode,
+				RoundtripMs: r.RoundtripMs,
+				Request:     r.Request,
+				Response:    r.Response,
+				Error:       r.Error,
+			}
+
+			if r.Response != nil {
+				if r.Response.Fingerprint != nil {
+					httputil.PopulateResponseDetails(
+						r.Response.Fingerprint, r.StatusCode,
+						r.Response.Headers, []byte(r.Response.Body),
+					)
+				}
+				if input.Marker != "" {
+					reflected := strings.Contains(r.Response.Body, input.Marker)
+					item.Reflected = &reflected
+				}
+				if !includeBody {
+					r.Response.Body = ""
+					r.Response.Truncated = false
+				}
+			}
+
+			results[i] = item
 		}
+
 		summary := fmt.Sprintf(
 			"%d/%d succeeded", ok, n,
 		)
@@ -122,7 +181,7 @@ func RegisterBatchSendTool(
 ) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "caido_batch_send",
-		Description: `Send multiple HTTP requests in parallel. Use for BAC token sweeps, parameter fuzzing, or endpoint sweeps. Max 50 per batch. Returns statusCode, headers, body per request.`,
+		Description: `Send multiple HTTP requests in parallel. Use for BAC token sweeps, parameter fuzzing, or endpoint sweeps. Max 50 per batch. Returns statusCode, headers, and a response fingerprint (title, redirect target, cookie names, word count) per request; body text is omitted by default to save tokens (set includeBody:true to include it). Pass marker to flag reflection per result.`,
 		Annotations: writeAnn(false, false, true),
 	}, batchSendHandler(client))
 }

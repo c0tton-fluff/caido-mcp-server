@@ -67,5 +67,6 @@ func RegisterListWorkflowsTool(
 		Name: "caido_list_workflows",
 		Description: `List automation workflows. ` +
 			`Returns id/name/kind/enabled.`,
+		Annotations: readOnlyAnn(),
 	}, listWorkflowsHandler(client))
 }

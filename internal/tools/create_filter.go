@@ -80,5 +80,6 @@ func RegisterCreateFilterTool(
 		Name: "caido_create_filter",
 		Description: `Create a new HTTPQL filter preset. ` +
 			`Returns id/name/alias of the created filter.`,
+		Annotations: writeAnn(false, false, false),
 	}, createFilterHandler(client))
 }

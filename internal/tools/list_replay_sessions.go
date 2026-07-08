@@ -61,5 +61,6 @@ func RegisterListReplaySessionsTool(
 		Name:        "caido_list_replay_sessions",
 		Description: `List replay sessions. Returns id and name for each session.`,
 		InputSchema: map[string]any{"type": "object"},
+		Annotations: readOnlyAnn(),
 	}, listReplaySessionsHandler(client))
 }

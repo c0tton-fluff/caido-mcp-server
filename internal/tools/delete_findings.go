@@ -113,5 +113,6 @@ func RegisterDeleteFindingsTool(
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "caido_delete_findings",
 		Description: `Delete findings by IDs or by reporter name. Params: ids (list) or reporter (string).`,
+		Annotations: writeAnn(true, true, false),
 	}, deleteFindingsHandler(client))
 }

@@ -100,5 +100,6 @@ func RegisterListRequestsTool(
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "caido_list_requests",
 		Description: `List HTTP requests. Filter with httpql (e.g. req.host.eq:"example.com"). Returns id/method/url/status.`,
+		Annotations: readOnlyAnn(),
 	}, listRequestsHandler(client))
 }

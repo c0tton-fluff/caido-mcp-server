@@ -59,5 +59,6 @@ func RegisterCreateProjectTool(
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "caido_create_project",
 		Description: `Create a new project with the specified name.`,
+		Annotations: writeAnn(false, false, false),
 	}, createProjectHandler(client))
 }

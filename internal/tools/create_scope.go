@@ -95,5 +95,6 @@ func RegisterCreateScopeTool(server *mcp.Server, client *caido.Client) {
 			`Values are hostnames, not URLs. ` +
 			`Examples: "example.com", "*.example.com". ` +
 			`Do NOT include scheme (https://) or paths.`,
+		Annotations: writeAnn(false, false, false),
 	}, createScopeHandler(client))
 }

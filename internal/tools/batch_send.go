@@ -123,5 +123,6 @@ func RegisterBatchSendTool(
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "caido_batch_send",
 		Description: `Send multiple HTTP requests in parallel. Use for BAC token sweeps, parameter fuzzing, or endpoint sweeps. Max 50 per batch. Returns statusCode, headers, body per request.`,
+		Annotations: writeAnn(false, false, true),
 	}, batchSendHandler(client))
 }

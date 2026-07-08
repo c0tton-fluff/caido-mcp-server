@@ -102,5 +102,6 @@ func RegisterListFindingsTool(
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "caido_list_findings",
 		Description: `List security findings. Returns title/host/path/requestId.`,
+		Annotations: readOnlyAnn(),
 	}, listFindingsHandler(client))
 }

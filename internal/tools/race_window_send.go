@@ -132,5 +132,6 @@ func RegisterRaceWindowSendTool(
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "caido_race_window_send",
 		Description: `Fire multiple raw HTTP/1.1 requests with a synchronized last-byte send (single-packet / race-window style) for race-condition testing. All connections are dialed and parked at a barrier; final bytes are written together after the barrier opens (best-effort simultaneity, not guaranteed sub-ms). WARNING: this BYPASSES the Caido proxy -- requests are sent via raw sockets from this process and do NOT appear in Caido history. Max 50 requests.`,
+		Annotations: writeAnn(false, false, true),
 	}, raceWindowSendHandler(client))
 }

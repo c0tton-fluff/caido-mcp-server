@@ -125,5 +125,6 @@ func RegisterExportCurlTool(
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "caido_export_curl",
 		Description: `Convert a Caido request to a curl command. Returns executable curl command string with method, URL, headers, and body.`,
+		Annotations: readOnlyAnn(),
 	}, exportCurlHandler(client))
 }

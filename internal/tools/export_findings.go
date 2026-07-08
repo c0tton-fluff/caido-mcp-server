@@ -145,5 +145,6 @@ func RegisterExportFindingsTool(
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "caido_export_findings",
 		Description: `Export findings. Filter by IDs or reporter name. Returns exportId for download.`,
+		Annotations: readOnlyAnn(),
 	}, exportFindingsHandler(client))
 }

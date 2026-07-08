@@ -100,5 +100,6 @@ func RegisterListWsStreamsTool(server *mcp.Server, client *caido.Client) {
 			`Returns id/host/port/path/direction/source. ` +
 			`Use the stream id with caido_list_ws_messages to read frames. ` +
 			`Params: limit (default 20, max 100), after (cursor), scope_id (optional).`,
+		Annotations: readOnlyAnn(),
 	}, listWsStreamsHandler(client))
 }

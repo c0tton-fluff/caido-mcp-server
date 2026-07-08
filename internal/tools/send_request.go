@@ -269,5 +269,6 @@ func RegisterSendRequestTool(
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "caido_send_request",
 		Description: `Send HTTP request and return response inline. Returns statusCode, headers, body. Polls up to 10s for response. On timeout, returns entryId for follow-up via get_replay_entry. Session cookies (Set-Cookie) auto-persist between calls sharing the same sessionId; pass useCookieJar:false to disable for a single call.`,
+		Annotations: writeAnn(false, false, true),
 	}, sendRequestHandler(client))
 }

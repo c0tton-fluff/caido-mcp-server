@@ -57,5 +57,6 @@ func RegisterListReplayCollectionsTool(
 		Name:        "caido_list_replay_collections",
 		Description: `List replay collections. Returns id and name for each collection.`,
 		InputSchema: map[string]any{"type": "object"},
+		Annotations: readOnlyAnn(),
 	}, listReplayCollectionsHandler(client))
 }

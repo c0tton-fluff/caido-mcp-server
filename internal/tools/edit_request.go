@@ -273,5 +273,6 @@ func RegisterEditRequestTool(
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "caido_edit_request",
 		Description: `Modify and resend an existing request. Fetches original request, applies modifications (method, path, headers, body), preserves auth/cookies, and sends the modified request. Returns same output as send_request.`,
+		Annotations: writeAnn(false, false, true),
 	}, editRequestHandler(client))
 }

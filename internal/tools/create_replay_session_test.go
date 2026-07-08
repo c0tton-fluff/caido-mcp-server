@@ -17,6 +17,10 @@ func TestCreateReplaySession(t *testing.T) {
 		wantID   string
 		wantName string
 		wantErr  bool
+		// verifyVars asserts the GraphQL "variables" the handler transmitted.
+		// It reads the input object off MockHandler.LastVariables so the checks
+		// exercise the real wire payload, not just the returned output.
+		verifyVars func(t *testing.T, input map[string]any)
 	}{
 		{
 			name: "creates session with defaults",
@@ -25,6 +29,9 @@ func TestCreateReplaySession(t *testing.T) {
 				m.On("CreateReplaySession", testutil.CreateReplaySessionResponse("sess-new"))
 			},
 			wantID: "sess-new",
+			verifyVars: func(t *testing.T, input map[string]any) {
+				assertKind(t, input, "HTTP")
+			},
 		},
 		{
 			name: "creates and renames session",
@@ -35,6 +42,9 @@ func TestCreateReplaySession(t *testing.T) {
 			},
 			wantID:   "sess-named",
 			wantName: "auth-testing",
+			verifyVars: func(t *testing.T, input map[string]any) {
+				assertKind(t, input, "HTTP")
+			},
 		},
 		{
 			name: "creates session with request source",
@@ -43,6 +53,16 @@ func TestCreateReplaySession(t *testing.T) {
 				m.On("CreateReplaySession", testutil.CreateReplaySessionResponse("sess-seeded"))
 			},
 			wantID: "sess-seeded",
+			verifyVars: func(t *testing.T, input map[string]any) {
+				assertKind(t, input, "HTTP")
+				rs, ok := input["requestSource"].(map[string]any)
+				if !ok {
+					t.Fatalf("variables.input.requestSource not an object: %#v", input["requestSource"])
+				}
+				if got := rs["id"]; got != "req-42" {
+					t.Fatalf("variables.input.requestSource.id = %#v, want %q", got, "req-42")
+				}
+			},
 		},
 		{
 			name: "creates session in collection",
@@ -53,6 +73,12 @@ func TestCreateReplaySession(t *testing.T) {
 			},
 			wantID:   "sess-col",
 			wantName: "api-tests",
+			verifyVars: func(t *testing.T, input map[string]any) {
+				assertKind(t, input, "HTTP")
+				if got := input["collectionId"]; got != "col-5" {
+					t.Fatalf("variables.input.collectionId = %#v, want %q", got, "col-5")
+				}
+			},
 		},
 		{
 			name: "creates HTTP session via explicit kind",
@@ -61,6 +87,9 @@ func TestCreateReplaySession(t *testing.T) {
 				m.On("CreateReplaySession", testutil.CreateReplaySessionResponse("sess-http"))
 			},
 			wantID: "sess-http",
+			verifyVars: func(t *testing.T, input map[string]any) {
+				assertKind(t, input, "HTTP")
+			},
 		},
 		{
 			name: "creates WS session via explicit kind",
@@ -69,6 +98,9 @@ func TestCreateReplaySession(t *testing.T) {
 				m.On("CreateReplaySession", testutil.CreateReplaySessionResponse("sess-ws"))
 			},
 			wantID: "sess-ws",
+			verifyVars: func(t *testing.T, input map[string]any) {
+				assertKind(t, input, "WS")
+			},
 		},
 		{
 			name: "creates session with lowercase kind (normalized)",
@@ -77,6 +109,9 @@ func TestCreateReplaySession(t *testing.T) {
 				m.On("CreateReplaySession", testutil.CreateReplaySessionResponse("sess-ws-lower"))
 			},
 			wantID: "sess-ws-lower",
+			verifyVars: func(t *testing.T, input map[string]any) {
+				assertKind(t, input, "WS")
+			},
 		},
 		{
 			name:    "rejects invalid kind value",
@@ -109,6 +144,33 @@ func TestCreateReplaySession(t *testing.T) {
 			if tt.wantName != "" && output.Name != tt.wantName {
 				t.Fatalf("want name %q, got %q", tt.wantName, output.Name)
 			}
+
+			if tt.verifyVars != nil {
+				tt.verifyVars(t, createReplaySessionInput(t, env.Mock))
+			}
 		})
+	}
+}
+
+// createReplaySessionInput extracts the variables.input object that the handler
+// sent for the CreateReplaySession GraphQL operation.
+func createReplaySessionInput(t *testing.T, m *testutil.MockHandler) map[string]any {
+	t.Helper()
+	vars := m.LastVariables("CreateReplaySession")
+	if vars == nil {
+		t.Fatal("no variables recorded for CreateReplaySession operation")
+	}
+	input, ok := vars["input"].(map[string]any)
+	if !ok {
+		t.Fatalf("variables.input not an object: %#v", vars["input"])
+	}
+	return input
+}
+
+// assertKind fails unless the transmitted variables.input.kind equals want.
+func assertKind(t *testing.T, input map[string]any, want string) {
+	t.Helper()
+	if got := input["kind"]; got != want {
+		t.Fatalf("variables.input.kind = %#v, want %q", got, want)
 	}
 }

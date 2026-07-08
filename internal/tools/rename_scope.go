@@ -50,5 +50,6 @@ func RegisterRenameScopeTool(server *mcp.Server, client *caido.Client) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "caido_rename_scope",
 		Description: `Rename a scope by ID.`,
+		Annotations: writeAnn(false, true, false),
 	}, renameScopeHandler(client))
 }

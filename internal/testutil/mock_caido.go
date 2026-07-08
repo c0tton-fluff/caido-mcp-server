@@ -8,13 +8,15 @@ import (
 )
 
 type MockHandler struct {
-	mu        sync.Mutex
-	responses map[string][]json.RawMessage
+	mu            sync.Mutex
+	responses     map[string][]json.RawMessage
+	lastVariables map[string]map[string]any
 }
 
 func NewMockHandler() *MockHandler {
 	return &MockHandler{
-		responses: make(map[string][]json.RawMessage),
+		responses:     make(map[string][]json.RawMessage),
+		lastVariables: make(map[string]map[string]any),
 	}
 }
 
@@ -33,7 +35,8 @@ func (m *MockHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		OperationName string `json:"operationName"`
+		OperationName string         `json:"operationName"`
+		Variables     map[string]any `json:"variables"`
 	}
 	if err := json.Unmarshal(body, &req); err != nil {
 		http.Error(w, "invalid json", http.StatusBadRequest)
@@ -41,6 +44,7 @@ func (m *MockHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	m.mu.Lock()
+	m.lastVariables[req.OperationName] = req.Variables
 	queue, ok := m.responses[req.OperationName]
 	var resp json.RawMessage
 	if ok && len(queue) > 0 {
@@ -67,4 +71,13 @@ func (m *MockHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]json.RawMessage{
 		"data": resp,
 	})
+}
+
+// LastVariables returns the most recently decoded GraphQL "variables" object
+// sent for the given operation name, or nil if that operation has not been
+// invoked. Use it to assert the request payload a handler transmitted.
+func (m *MockHandler) LastVariables(op string) map[string]any {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.lastVariables[op]
 }

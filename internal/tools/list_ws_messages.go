@@ -121,5 +121,6 @@ func RegisterListWsMessagesTool(server *mcp.Server, client *caido.Client) {
 			`length, and decoded body (truncated to body_limit). ` +
 			`Params: stream_id (required), limit (default 20, max 100), ` +
 			`after (cursor), body_limit (default 4096, max 65536).`,
+		Annotations: readOnlyAnn(),
 	}, listWsMessagesHandler(client))
 }

@@ -104,5 +104,6 @@ func RegisterGetAutomateSessionTool(
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "caido_get_automate_session",
 		Description: `Get fuzzing session details. Returns requestTemplate and list of entry IDs.`,
+		Annotations: readOnlyAnn(),
 	}, getAutomateSessionHandler(client))
 }

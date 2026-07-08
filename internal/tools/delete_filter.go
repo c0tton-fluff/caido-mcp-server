@@ -51,5 +51,6 @@ func RegisterDeleteFilterTool(
 		Name: "caido_delete_filter",
 		Description: `Delete a filter preset by ID. ` +
 			`Returns success status.`,
+		Annotations: writeAnn(true, true, false),
 	}, deleteFilterHandler(client))
 }

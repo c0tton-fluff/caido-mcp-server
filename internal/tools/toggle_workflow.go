@@ -72,5 +72,6 @@ func RegisterToggleWorkflowTool(
 		Name: "caido_toggle_workflow",
 		Description: `Enable or disable an automation workflow. ` +
 			`Params: id (required), enabled (true/false).`,
+		Annotations: writeAnn(false, false, false),
 	}, toggleWorkflowHandler(client))
 }

@@ -75,5 +75,6 @@ func RegisterConvertBodyTool(server *mcp.Server, client *caido.Client) {
 			`JSON<->form supports flat objects losslessly (nested uses ` +
 			`bracket notation a[b]=c). multipart handles flat string fields ` +
 			`only (no files).`,
+		Annotations: readOnlyAnn(),
 	}, convertBodyHandler(client))
 }

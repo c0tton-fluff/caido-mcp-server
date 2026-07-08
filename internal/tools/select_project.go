@@ -61,5 +61,6 @@ func RegisterSelectProjectTool(
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "caido_select_project",
 		Description: `Switch active project. All subsequent operations use the selected project's data.`,
+		Annotations: writeAnn(false, true, false),
 	}, selectProjectHandler(client))
 }

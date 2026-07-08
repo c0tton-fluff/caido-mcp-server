@@ -160,5 +160,6 @@ func RegisterUpdateTamperRuleTool(
 			`responseBody/etc), match (regex), replace (string), ` +
 			`condition (HTTPQL filter), sources (traffic sources). ` +
 			`This is a full update; pass the complete rule state.`,
+		Annotations: writeAnn(false, true, false),
 	}, updateTamperRuleHandler(client))
 }

@@ -60,5 +60,6 @@ func RegisterRenameProjectTool(
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "caido_rename_project",
 		Description: `Rename an existing project.`,
+		Annotations: writeAnn(false, true, false),
 	}, renameProjectHandler(client))
 }

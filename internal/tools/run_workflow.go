@@ -145,5 +145,6 @@ func RegisterRunWorkflowTool(
 			`input (for convert). Active workflows run on a ` +
 			`request and return a task_id. Convert workflows ` +
 			`transform input data and return the output.`,
+		Annotations: writeAnn(false, false, true),
 	}, runWorkflowHandler(client))
 }

@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [4.2.0] - 2026-07-08
 
 ### Security
 - **Bumped `modelcontextprotocol/go-sdk` v1.2.0 -> v1.4.1**, fixing 4 govulncheck-reported advisories (GO-2026-5771, GO-2026-4773, GO-2026-4770, GO-2026-4569). Requires Go 1.25+.

@@ -8,7 +8,7 @@ import (
 )
 
 var rootCmd = &cobra.Command{
-	Use:   "caido",
+	Use:   "caido-cli",
 	Short: "Pentest HTTP client through Caido proxy",
 	Long:  "CLI for Caido proxy -- send requests, browse history, encode/decode.",
 }

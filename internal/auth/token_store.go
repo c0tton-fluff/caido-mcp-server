@@ -67,7 +67,7 @@ func (s *TokenStore) Save(token *StoredToken) error {
 		return fmt.Errorf("failed to write token file: %w", err)
 	}
 	if err := os.Rename(tmpPath, s.tokenFilePath()); err != nil {
-		os.Remove(tmpPath)
+		_ = os.Remove(tmpPath) // best-effort cleanup of the temp file
 		return fmt.Errorf("failed to rename token file: %w", err)
 	}
 

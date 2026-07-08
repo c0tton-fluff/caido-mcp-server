@@ -47,5 +47,6 @@ func RegisterDeleteProjectTool(
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "caido_delete_project",
 		Description: `Delete a project by ID. This operation cannot be undone.`,
+		Annotations: writeAnn(true, true, false),
 	}, deleteProjectHandler(client))
 }

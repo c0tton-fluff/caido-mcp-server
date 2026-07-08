@@ -81,5 +81,6 @@ func RegisterListFiltersTool(
 		Name: "caido_list_filters",
 		Description: `List saved HTTPQL filter presets. ` +
 			`Returns id/name/alias/clause.`,
+		Annotations: readOnlyAnn(),
 	}, listFiltersHandler(client))
 }

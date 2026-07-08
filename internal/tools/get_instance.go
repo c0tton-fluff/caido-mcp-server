@@ -46,5 +46,6 @@ func RegisterGetInstanceTool(
 		Name: "caido_get_instance",
 		Description: `Get Caido instance info. ` +
 			`Returns version and platform.`,
+		Annotations: readOnlyAnn(),
 	}, getInstanceHandler(client))
 }

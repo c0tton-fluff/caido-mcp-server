@@ -43,7 +43,8 @@ func (c *ResponseCache) GetAndSet(sessionID string, current ResponseDigest) *Dif
 		return nil
 	}
 
-	if prev.BodyHash == current.BodyHash && prev.StatusCode == current.StatusCode {
+	if prev.BodyHash == current.BodyHash && prev.StatusCode == current.StatusCode &&
+		prev.BodySize == current.BodySize {
 		return &DiffResult{
 			Same:    true,
 			Summary: "identical to previous response",

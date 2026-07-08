@@ -69,5 +69,6 @@ func RegisterListAutomateSessionsTool(
 		Name:        "caido_list_automate_sessions",
 		Description: `List fuzzing sessions. Returns id/name/createdAt.`,
 		InputSchema: map[string]any{"type": "object"},
+		Annotations: readOnlyAnn(),
 	}, listAutomateSessionsHandler(client))
 }

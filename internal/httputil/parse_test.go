@@ -26,6 +26,7 @@ func TestParseBase64_HeadersOnly(t *testing.T) {
 	result := ParseBase64(encoded, true, false, 0, 0)
 	if result == nil {
 		t.Fatal("expected non-nil result")
+		return
 	}
 	if result.FirstLine != "GET / HTTP/1.1" {
 		t.Fatalf("unexpected first line: %q", result.FirstLine)
@@ -53,6 +54,7 @@ func TestParseRaw_BodyTruncation(t *testing.T) {
 	result := ParseRaw(raw, false, true, 0, 5)
 	if result == nil {
 		t.Fatal("expected non-nil result")
+		return
 	}
 	if result.Body != "abcde" {
 		t.Fatalf("expected truncated body %q, got %q", "abcde", result.Body)
@@ -70,6 +72,7 @@ func TestParseRaw_BodyOffset(t *testing.T) {
 	result := ParseRaw(raw, false, true, 3, 0)
 	if result == nil {
 		t.Fatal("expected non-nil result")
+		return
 	}
 	if result.Body != "defghij" {
 		t.Fatalf("expected body %q, got %q", "defghij", result.Body)
@@ -84,6 +87,7 @@ func TestParseRaw_BodyOffsetBeyondLength(t *testing.T) {
 	result := ParseRaw(raw, false, true, 100, 0)
 	if result == nil {
 		t.Fatal("expected non-nil result")
+		return
 	}
 	if result.Body != "" {
 		t.Fatalf("expected empty body, got %q", result.Body)
@@ -101,6 +105,7 @@ func TestParseRaw_DuplicateHeaders(t *testing.T) {
 	result := ParseRaw(raw, true, false, 0, 0)
 	if result == nil {
 		t.Fatal("expected non-nil result")
+		return
 	}
 
 	cookieCount := 0
@@ -130,6 +135,7 @@ func TestParseRaw_SensitiveHeaderRedaction(t *testing.T) {
 	result := ParseRaw(raw, true, false, 0, 0)
 	if result == nil {
 		t.Fatal("expected non-nil result")
+		return
 	}
 
 	expects := map[string]string{
@@ -168,6 +174,7 @@ func TestParseRaw_SensitiveHeadersAllowedWhenOptedIn(t *testing.T) {
 	result := ParseRaw(raw, true, false, 0, 0)
 	if result == nil {
 		t.Fatal("expected non-nil result")
+		return
 	}
 
 	expects := map[string]string{
@@ -203,6 +210,7 @@ func TestParseRaw_SensitiveHeadersRedactedOnInvalidOptIn(t *testing.T) {
 	result := ParseRaw(raw, true, false, 0, 0)
 	if result == nil {
 		t.Fatal("expected non-nil result")
+		return
 	}
 	for _, h := range result.Headers {
 		if h.Name == "Authorization" && h.Value != "[REDACTED]" {
@@ -219,6 +227,7 @@ func TestParseRaw_FirstLine(t *testing.T) {
 	result := ParseRaw(raw, true, false, 0, 0)
 	if result == nil {
 		t.Fatal("expected non-nil result")
+		return
 	}
 	if result.FirstLine != "POST /api HTTP/1.1" {
 		t.Fatalf("unexpected first line: %q", result.FirstLine)

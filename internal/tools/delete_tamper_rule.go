@@ -53,5 +53,6 @@ func RegisterDeleteTamperRuleTool(
 		Name: "caido_delete_tamper_rule",
 		Description: `Delete a Match & Replace (tamper) rule ` +
 			`by ID. Params: id (required).`,
+		Annotations: writeAnn(true, true, false),
 	}, deleteTamperRuleHandler(client))
 }

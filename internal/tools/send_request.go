@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 
 	"github.com/c0tton-fluff/caido-mcp-server/internal/httputil"
 	"github.com/c0tton-fluff/caido-mcp-server/internal/replay"
@@ -25,6 +26,8 @@ type SendRequestInput struct {
 	BodyLimit    int    `json:"bodyLimit,omitempty" jsonschema:"Response body byte limit (default 2000)"`
 	BodyOffset   int    `json:"bodyOffset,omitempty" jsonschema:"Response body byte offset (default 0)"`
 	UseCookieJar *bool  `json:"useCookieJar,omitempty" jsonschema:"Auto-inject session cookies and persist Set-Cookie (default true). Set false to disable for this call only."`
+	IncludeBody  *bool  `json:"includeBody,omitempty" jsonschema:"Include response body text in output (default true). The response fingerprint (title, redirect target, cookie names, word count) is always populated regardless of this setting."`
+	Marker       string `json:"marker,omitempty" jsonschema:"Optional string to search for in the response body; when set, output.reflected reports whether it was found"`
 }
 
 // SendRequestOutput is the output of the send_request tool
@@ -38,6 +41,7 @@ type SendRequestOutput struct {
 	Response    *httputil.ParsedMessage `json:"response,omitempty"`
 	Diff        *httputil.DiffResult    `json:"diff,omitempty"`
 	CookieJar   *CookieJarStatus        `json:"cookieJar,omitempty"`
+	Reflected   *bool                   `json:"reflected,omitempty"`
 	Error       string                  `json:"error,omitempty"`
 }
 
@@ -53,11 +57,10 @@ type CookieJarStatus struct {
 // RFC 6265 cookie matching against the session jar.
 func buildRequestURL(host string, port int, useTLS bool, raw string) *url.URL {
 	scheme := "http"
-	defaultPort := 80
 	if useTLS {
 		scheme = "https"
-		defaultPort = 443
 	}
+	defaultPort := httputil.DefaultPort(useTLS)
 	hostHeader := host
 	if port != 0 && port != defaultPort {
 		hostHeader = fmt.Sprintf("%s:%d", host, port)
@@ -96,10 +99,8 @@ func sendRequestHandler(
 				"raw HTTP request is required",
 			)
 		}
-		if len(input.Raw) > 1048576 {
-			return nil, SendRequestOutput{}, fmt.Errorf(
-				"raw request exceeds max length of 1MB",
-			)
+		if err := checkRawSize("raw", input.Raw); err != nil {
+			return nil, SendRequestOutput{}, err
 		}
 
 		raw := httputil.NormalizeCRLF(input.Raw)
@@ -132,11 +133,7 @@ func sendRequestHandler(
 		}
 		port := input.Port
 		if port == 0 {
-			if useTLS {
-				port = 443
-			} else {
-				port = 80
-			}
+			port = httputil.DefaultPort(useTLS)
 		}
 
 		sessionID, err := replay.GetOrCreateSession(
@@ -230,6 +227,36 @@ func sendRequestHandler(
 					input.BodyOffset, bodyLimit,
 				)
 
+				// Decode the raw (undecoded, unredacted) response once.
+				// Set-Cookie header VALUES are replaced with "[REDACTED]"
+				// by ParseRaw's default sensitive-header handling, so the
+				// parsed output.Response.Headers cannot yield real cookie
+				// names; ExtractRawSetCookies works directly against the
+				// raw bytes instead, same as the existing jar logic below.
+				rawDecoded, rawDecodeErr := base64.StdEncoding.DecodeString(resp.Raw)
+				var setCookies []*http.Cookie
+				if rawDecodeErr == nil {
+					setCookies = httputil.ExtractRawSetCookies(rawDecoded)
+				}
+
+				// Enrich the fingerprint with response-only details
+				// (status code, title, redirect target, cookie names,
+				// word count) and check the reflection marker, before
+				// the dedup/includeBody logic below may clear the body.
+				if output.Response != nil {
+					if output.Response.Fingerprint != nil {
+						httputil.PopulateResponseDetails(
+							output.Response.Fingerprint, resp.StatusCode,
+							output.Response.Headers, []byte(output.Response.Body),
+						)
+						output.Response.Fingerprint.SetCookies = cookiesToNames(setCookies)
+					}
+					if input.Marker != "" {
+						reflected := strings.Contains(output.Response.Body, input.Marker)
+						output.Reflected = &reflected
+					}
+				}
+
 				// Diff against previous response in same session.
 				if output.Response != nil {
 					digest := httputil.ResponseDigest{
@@ -247,19 +274,25 @@ func sendRequestHandler(
 					}
 				}
 
+				// Omit body text when the caller opts out. Default true
+				// preserves existing behavior; the fingerprint (already
+				// populated above) stays either way.
+				includeBody := true
+				if input.IncludeBody != nil {
+					includeBody = *input.IncludeBody
+				}
+				if output.Response != nil && !includeBody {
+					output.Response.Body = ""
+					output.Response.Truncated = false
+				}
+
 				// Persist Set-Cookie back into the session jar.
-				if useJar {
-					decoded, decErr := base64.StdEncoding.DecodeString(resp.Raw)
-					if decErr == nil {
-						setCookies := httputil.ExtractRawSetCookies(decoded)
-						if len(setCookies) > 0 {
-							storeErr := replay.DefaultCookieStore().SetCookies(
-								sessionID, reqURL, setCookies,
-							)
-							if storeErr == nil {
-								jarStatus.StoredCookies = cookiesToNames(setCookies)
-							}
-						}
+				if useJar && len(setCookies) > 0 {
+					storeErr := replay.DefaultCookieStore().SetCookies(
+						sessionID, reqURL, setCookies,
+					)
+					if storeErr == nil {
+						jarStatus.StoredCookies = cookiesToNames(setCookies)
 					}
 				}
 			}
@@ -275,6 +308,7 @@ func RegisterSendRequestTool(
 ) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "caido_send_request",
-		Description: `Send HTTP request and return response inline. Returns statusCode, headers, body. Polls up to 10s for response. On timeout, returns entryId for follow-up via get_replay_entry. Session cookies (Set-Cookie) auto-persist between calls sharing the same sessionId; pass useCookieJar:false to disable for a single call.`,
+		Description: `Send HTTP request and return response inline. Returns statusCode, headers, body, and a response fingerprint (title, redirect target, cookie names, word count). Polls up to 10s for response. On timeout, returns entryId for follow-up via get_replay_entry. Session cookies (Set-Cookie) auto-persist between calls sharing the same sessionId; pass useCookieJar:false to disable for a single call. Set includeBody:false to omit body text (fingerprint stays populated); pass marker to check for reflection in the response body.`,
+		Annotations: writeAnn(false, false, true),
 	}, sendRequestHandler(client))
 }

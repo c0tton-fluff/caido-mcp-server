@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <a href="https://go.dev"><img src="https://img.shields.io/badge/Go-1.24+-00ADD8?logo=go&logoColor=white" alt="Go"></a>
+  <a href="https://go.dev"><img src="https://img.shields.io/badge/Go-1.25+-00ADD8?logo=go&logoColor=white" alt="Go"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License"></a>
   <a href="https://github.com/c0tton-fluff/caido-mcp-server/releases"><img src="https://img.shields.io/github/v/release/c0tton-fluff/caido-mcp-server" alt="Release"></a>
   <a href="https://modelcontextprotocol.io"><img src="https://img.shields.io/badge/MCP-compatible-8A2BE2" alt="MCP"></a>
@@ -22,7 +22,7 @@
 
 Two ways to interact with your Caido proxy:
 
-- **MCP Server** - expose 64 tools and 4 read-only resources to AI assistants (Claude Code, Cursor, etc.) via the Model Context Protocol
+- **MCP Server** - expose 66 tools and 6 read-only resources to AI assistants (Claude Code, Cursor, etc.) via the Model Context Protocol
 - **CLI** - standalone terminal client for pentesters who prefer the command line
 
 Both share the same auth token, the same Go SDK, and the same codebase.
@@ -31,12 +31,12 @@ Both share the same auth token, the same Go SDK, and the same codebase.
 
 | Category | Capabilities |
 |----------|-------------|
-| **Proxy History** | Search requests with HTTPQL, get full request/response details |
+| **Proxy History** | Search requests with HTTPQL, get full request/response details, diff two responses |
 | **Replay** | Send HTTP requests, get response inline (status, headers, body). Per-session cookie jar auto-persists `Set-Cookie` between calls |
 | **Automate** | Access fuzzing sessions, results, and payloads. Start/pause/resume/cancel tasks |
 | **Findings** | Create, list, delete, and export security findings |
 | **Sitemap** | Browse discovered endpoints |
-| **Scopes** | Full lifecycle: create, rename, delete target scope definitions |
+| **Scopes** | Full lifecycle: create, rename, delete target scope definitions; check if a host/URL is in scope |
 | **Projects** | Full lifecycle: create, rename, select, delete projects |
 | **Workflows** | List, run, and toggle automation workflows |
 | **Tamper** | List, create, toggle, and delete Match & Replace rules |
@@ -444,29 +444,29 @@ Requires authentication - either set `CAIDO_PAT` env var or run `caido-mcp-serve
 
 ```bash
 # Check connection and auth
-caido status -u http://localhost:8080
+caido-cli status -u http://localhost:8080
 
 # Send structured requests
-caido send GET https://target.com/api/users
-caido send POST https://target.com/api/login -j '{"user":"admin","pass":"test"}'
-caido send PUT https://target.com/api/profile -H "Authorization: Bearer tok" -j '{"role":"admin"}'
+caido-cli send GET https://target.com/api/users
+caido-cli send POST https://target.com/api/login -j '{"user":"admin","pass":"test"}'
+caido-cli send PUT https://target.com/api/profile -H "Authorization: Bearer tok" -j '{"role":"admin"}'
 
 # Send raw HTTP requests
-caido raw 'GET /api/users HTTP/1.1\r\nHost: target.com\r\n\r\n'
-caido raw -f request.txt --host target.com --port 8443
-echo -n 'GET / HTTP/1.1\r\nHost: example.com\r\n\r\n' | caido raw -
+caido-cli raw 'GET /api/users HTTP/1.1\r\nHost: target.com\r\n\r\n'
+caido-cli raw -f request.txt --host target.com --port 8443
+echo -n 'GET / HTTP/1.1\r\nHost: example.com\r\n\r\n' | caido-cli raw -
 
 # Browse proxy history
-caido history
-caido history -f 'req.host.eq:"target.com"' -n 20
+caido-cli history
+caido-cli history -f 'req.host.eq:"target.com"' -n 20
 
 # Get full request/response details
-caido request 12345
+caido-cli request 12345
 
 # Encode/decode
-caido encode base64 "hello world"
-caido decode url "%3Cscript%3E"
-caido encode hex "test"
+caido-cli encode base64 "hello world"
+caido-cli decode url "%3Cscript%3E"
+caido-cli encode hex "test"
 ```
 
 ### Commands

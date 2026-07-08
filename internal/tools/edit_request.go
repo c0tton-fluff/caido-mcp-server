@@ -184,11 +184,7 @@ func editRequestHandler(
 		}
 
 		if port == 0 {
-			if useTLS {
-				port = 443
-			} else {
-				port = 80
-			}
+			port = httputil.DefaultPort(useTLS)
 		}
 
 		sessionID, err := replay.GetOrCreateSession(ctx, client, input.SessionID)
@@ -277,5 +273,6 @@ func RegisterEditRequestTool(
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "caido_edit_request",
 		Description: `Modify and resend an existing request. Fetches original request, applies modifications (method, path, headers, body), preserves auth/cookies, and sends the modified request. Returns same output as send_request.`,
+		Annotations: writeAnn(false, false, true),
 	}, editRequestHandler(client))
 }

@@ -45,5 +45,6 @@ func RegisterDeleteReplaySessionsTool(
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "caido_delete_replay_sessions",
 		Description: `Delete one or more replay sessions by ID.`,
+		Annotations: writeAnn(true, true, false),
 	}, deleteReplaySessionsHandler(client))
 }

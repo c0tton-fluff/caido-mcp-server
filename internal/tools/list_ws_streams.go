@@ -43,13 +43,7 @@ func listWsStreamsHandler(
 		req *mcp.CallToolRequest,
 		input ListWsStreamsInput,
 	) (*mcp.CallToolResult, ListWsStreamsOutput, error) {
-		limit := input.Limit
-		if limit <= 0 {
-			limit = 20
-		}
-		if limit > 100 {
-			limit = 100
-		}
+		limit := clampLimit(input.Limit, 20, 100)
 
 		opts := &caido.ListStreamsOptions{
 			First: &limit,
@@ -90,12 +84,9 @@ func listWsStreamsHandler(
 				CreatedAt: n.CreatedAt,
 			})
 		}
-		if conn.PageInfo.HasNextPage {
-			output.HasMore = true
-			if conn.PageInfo.EndCursor != nil {
-				output.NextCursor = *conn.PageInfo.EndCursor
-			}
-		}
+		output.HasMore, output.NextCursor = pageCursor(
+			conn.PageInfo.HasNextPage, conn.PageInfo.EndCursor,
+		)
 
 		return nil, output, nil
 	}
@@ -109,5 +100,6 @@ func RegisterListWsStreamsTool(server *mcp.Server, client *caido.Client) {
 			`Returns id/host/port/path/direction/source. ` +
 			`Use the stream id with caido_list_ws_messages to read frames. ` +
 			`Params: limit (default 20, max 100), after (cursor), scope_id (optional).`,
+		Annotations: readOnlyAnn(),
 	}, listWsStreamsHandler(client))
 }

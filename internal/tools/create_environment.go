@@ -71,5 +71,6 @@ func RegisterCreateEnvironmentTool(server *mcp.Server, client *caido.Client) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "caido_create_environment",
 		Description: `Create a new environment. Environments store variables (tokens, keys, etc) that can be used in replay placeholders.`,
+		Annotations: writeAnn(false, false, false),
 	}, createEnvironmentHandler(client))
 }

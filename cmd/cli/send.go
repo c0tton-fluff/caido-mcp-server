@@ -101,7 +101,10 @@ func buildRequest(
 	tls := u.Scheme == "https"
 	port := 0
 	if u.Port() != "" {
-		fmt.Sscanf(u.Port(), "%d", &port)
+		// u.Port() is already validated numeric by url.Parse; Sscanf cannot
+		// meaningfully fail here, and a failed parse just leaves port at its
+		// scheme-derived default below.
+		_, _ = fmt.Sscanf(u.Port(), "%d", &port)
 	}
 	if port == 0 {
 		if tls {

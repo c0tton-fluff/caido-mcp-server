@@ -2,6 +2,30 @@
 
 All notable changes to this project will be documented in this file.
 
+## [4.2.0] - 2026-07-08
+
+### Security
+- **Bumped `modelcontextprotocol/go-sdk` v1.2.0 -> v1.4.1**, fixing 4 govulncheck-reported advisories (GO-2026-5771, GO-2026-4773, GO-2026-4770, GO-2026-4569). Requires Go 1.25+.
+- **Raw-HTTP credential redaction is now enforced everywhere output leaves the server.** The `caido://requests/{id}` resource and `caido_get_automate_session` previously emitted base64-decoded raw requests/responses (and fuzz templates) with `Authorization`, `Cookie`, and `Set-Cookie` in cleartext, bypassing the redaction that only lived inside `ParseRaw`. A new `httputil.RedactRawHeaders` choke-point redacts sensitive header values in any raw dump (still honoring the `CAIDO_ALLOW_SENSITIVE_HEADERS` opt-out).
+
+### Fixed
+- **Response diff no longer hides real changes.** Two responses that shared the first `bodyLimit` bytes but differed in total size were reported "identical to previous response" (the hash is computed over the truncated body); the diff now also compares full body size.
+- **Replay `send_request` no longer orphans an empty session.** The first send of each process auto-created a default replay session that was replaced but never deleted; the fallback now best-effort deletes it (and pool cleanup logs, rather than discards, delete errors).
+- **OAuth login is context-cancellable.** The WebSocket token read could hang past a cancelled/expired context; a watcher now closes the connection on cancellation.
+- **`caido_race_window_send` no longer stalls on keep-alive targets.** The response read was `io.ReadFull` on a fixed buffer with a 10s deadline, blocking ~10s per request against keep-alive servers; it is now EOF/idle-aware.
+
+### Added
+- **MCP tool annotations** on all tools (`readOnlyHint` / `destructiveHint` / `idempotentHint` / `openWorldHint`), so clients can distinguish read-only, destructive, and external-network tools (roadmap Chunk 5).
+- **`caido_is_in_scope`** - check whether a host/URL is in the project scope, returning the matching rule (roadmap Chunk 8).
+- **`caido_diff_responses`** - structural diff (status/size/body) of two Caido-native request IDs (roadmap Chunk 4).
+- **`caido://scopes`** and **`caido://project`** read-only resources (roadmap Chunks 8 and 3). Tool/resource totals: 64 -> 66 tools, 4 -> 6 resources.
+- **Richer response fingerprint** - `send_request`/`batch_send` now surface status, title, redirect target, Set-Cookie names, and word count; `includeBody` (default true single / false batch) and a `marker` reflected-in-response check (roadmap Chunk 4).
+- Opt out of sensitive-header redaction via the `CAIDO_ALLOW_SENSITIVE_HEADERS` env var (#29).
+
+### Changed
+- `caido_create_replay_session` exposes the required `kind` field (#28).
+- Internal DRY refactors (shared `clampLimit`/`pageCursor`/`DefaultPort` helpers, one `maxRawRequestBytes` constant) and new test coverage for `edit_request`, the replay-session `kind` GraphQL contract, the CLI token/request builders, and the `auth` package.
+
 ## [4.1.0] - 2026-06-16
 
 ### Fixed

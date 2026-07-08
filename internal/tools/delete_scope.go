@@ -45,5 +45,6 @@ func RegisterDeleteScopeTool(server *mcp.Server, client *caido.Client) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "caido_delete_scope",
 		Description: `Delete a scope by ID.`,
+		Annotations: writeAnn(true, true, false),
 	}, deleteScopeHandler(client))
 }

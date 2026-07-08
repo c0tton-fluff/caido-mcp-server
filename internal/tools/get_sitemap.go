@@ -97,5 +97,6 @@ func RegisterGetSitemapTool(
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "caido_get_sitemap",
 		Description: `Get sitemap. No params=root domains. parentId=children. Returns id/label/kind.`,
+		Annotations: readOnlyAnn(),
 	}, getSitemapHandler(client))
 }

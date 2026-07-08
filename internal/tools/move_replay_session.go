@@ -51,5 +51,6 @@ func RegisterMoveReplaySessionTool(
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "caido_move_replay_session",
 		Description: `Move a replay session to a different collection.`,
+		Annotations: writeAnn(false, true, false),
 	}, moveReplaySessionHandler(client))
 }

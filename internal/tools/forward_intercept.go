@@ -33,10 +33,8 @@ func forwardInterceptHandler(
 				"id is required",
 			)
 		}
-		if len(input.Raw) > 1048576 {
-			return nil, ForwardInterceptOutput{}, fmt.Errorf(
-				"raw request exceeds max length of 1MB",
-			)
+		if err := checkRawSize("raw", input.Raw); err != nil {
+			return nil, ForwardInterceptOutput{}, err
 		}
 
 		var fwdInput *gen.ForwardInterceptMessageInput
@@ -74,5 +72,6 @@ func RegisterForwardInterceptTool(
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "caido_forward_intercept",
 		Description: `Forward intercepted request. Optionally modify with base64-encoded raw HTTP request. Params: id (required), raw (optional).`,
+		Annotations: writeAnn(false, false, true),
 	}, forwardInterceptHandler(client))
 }

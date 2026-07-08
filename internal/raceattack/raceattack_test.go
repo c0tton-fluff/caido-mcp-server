@@ -64,6 +64,43 @@ func TestSendSynchronized(t *testing.T) {
 	}
 }
 
+func TestSendKeepAliveShortBody(t *testing.T) {
+	// The server keeps the connection alive (no Connection: close) and
+	// returns a small body. readResponse must return promptly once the
+	// complete body is read instead of blocking for the full dialTimeout
+	// waiting to fill a fixed-size buffer.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ka-body"))
+	}))
+	defer srv.Close()
+
+	target := targetFromURL(t, srv.URL)
+	reqs := []Request{{
+		Label: "keepalive",
+		// No Connection: close -> Go's server keeps the socket open.
+		Raw: "GET / HTTP/1.1\r\nHost: " + target.Host + "\r\n\r\n",
+	}}
+
+	results := Send(context.Background(), target, reqs, 0)
+	if len(results) != 1 {
+		t.Fatalf("want 1 result, got %d", len(results))
+	}
+	r := results[0]
+	if r.Error != "" {
+		t.Fatalf("unexpected error: %q", r.Error)
+	}
+	if r.StatusCode != http.StatusOK {
+		t.Fatalf("want status 200, got %d (line %q)", r.StatusCode, r.StatusLine)
+	}
+	if r.Body != "ka-body" {
+		t.Fatalf("want body %q, got %q", "ka-body", r.Body)
+	}
+	if r.DurationMs >= 2000 {
+		t.Fatalf("keep-alive read blocked too long: %d ms (want < 2000)", r.DurationMs)
+	}
+}
+
 func TestSendDialFailure(t *testing.T) {
 	// Port 1 on loopback should refuse / fail to connect.
 	target := Target{Host: "127.0.0.1", Port: 1, TLS: false}

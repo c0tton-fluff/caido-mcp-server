@@ -52,13 +52,7 @@ func listWsMessagesHandler(
 			)
 		}
 
-		limit := input.Limit
-		if limit <= 0 {
-			limit = 20
-		}
-		if limit > 100 {
-			limit = 100
-		}
+		limit := clampLimit(input.Limit, 20, 100)
 
 		bodyLimit := input.BodyLimit
 		if bodyLimit <= 0 {
@@ -96,12 +90,9 @@ func listWsMessagesHandler(
 				Truncated: truncated,
 			})
 		}
-		if conn.PageInfo.HasNextPage {
-			output.HasMore = true
-			if conn.PageInfo.EndCursor != nil {
-				output.NextCursor = *conn.PageInfo.EndCursor
-			}
-		}
+		output.HasMore, output.NextCursor = pageCursor(
+			conn.PageInfo.HasNextPage, conn.PageInfo.EndCursor,
+		)
 
 		return nil, output, nil
 	}
@@ -130,5 +121,6 @@ func RegisterListWsMessagesTool(server *mcp.Server, client *caido.Client) {
 			`length, and decoded body (truncated to body_limit). ` +
 			`Params: stream_id (required), limit (default 20, max 100), ` +
 			`after (cursor), body_limit (default 4096, max 65536).`,
+		Annotations: readOnlyAnn(),
 	}, listWsMessagesHandler(client))
 }

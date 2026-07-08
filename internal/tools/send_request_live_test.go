@@ -45,7 +45,7 @@ func newLiveMCPEnv(
 	if err != nil {
 		t.Fatalf("mcp connect: %v", err)
 	}
-	t.Cleanup(func() { session.Close() })
+	t.Cleanup(func() { _ = session.Close() })
 	return &liveMCPEnv{session: session}
 }
 

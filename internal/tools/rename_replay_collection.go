@@ -51,5 +51,6 @@ func RegisterRenameReplayCollectionTool(
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "caido_rename_replay_collection",
 		Description: `Rename a replay collection.`,
+		Annotations: writeAnn(false, true, false),
 	}, renameReplayCollectionHandler(client))
 }

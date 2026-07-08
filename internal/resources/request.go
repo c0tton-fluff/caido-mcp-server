@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/c0tton-fluff/caido-mcp-server/internal/httputil"
 	caido "github.com/caido-community/sdk-go"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -50,7 +51,7 @@ func requestHandler(client *caido.Client) mcp.ResourceHandler {
 		if r.Raw != "" {
 			decoded, err := base64.StdEncoding.DecodeString(r.Raw)
 			if err == nil {
-				fmt.Fprintf(&b, "## Raw Request\n```http\n%s\n```\n\n", truncate(string(decoded), 4096))
+				fmt.Fprintf(&b, "## Raw Request\n```http\n%s\n```\n\n", truncate(httputil.RedactRawHeaders(string(decoded)), 4096))
 			}
 		}
 
@@ -61,7 +62,7 @@ func requestHandler(client *caido.Client) mcp.ResourceHandler {
 			if r.Response.Raw != "" {
 				decoded, err := base64.StdEncoding.DecodeString(r.Response.Raw)
 				if err == nil {
-					fmt.Fprintf(&b, "\n```http\n%s\n```\n", truncate(string(decoded), 4096))
+					fmt.Fprintf(&b, "\n```http\n%s\n```\n", truncate(httputil.RedactRawHeaders(string(decoded)), 4096))
 				}
 			}
 		}

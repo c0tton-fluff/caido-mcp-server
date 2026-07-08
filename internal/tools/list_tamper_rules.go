@@ -116,5 +116,6 @@ func RegisterListTamperRulesTool(
 			`collections and their rules. Returns ` +
 			`collection id/name with nested rules ` +
 			`(id/name/enabled/condition/sources).`,
+		Annotations: readOnlyAnn(),
 	}, listTamperRulesHandler(client))
 }

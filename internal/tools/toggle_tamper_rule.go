@@ -73,5 +73,6 @@ func RegisterToggleTamperRuleTool(
 		Description: `Enable or disable a Match & Replace ` +
 			`(tamper) rule. Params: id (required), ` +
 			`enabled (true/false).`,
+		Annotations: writeAnn(false, false, false),
 	}, toggleTamperRuleHandler(client))
 }

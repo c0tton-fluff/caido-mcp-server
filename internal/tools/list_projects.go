@@ -79,5 +79,6 @@ func RegisterListProjectsTool(
 		Name: "caido_list_projects",
 		Description: `List projects. Returns id/name/status/version. ` +
 			`Current project marked with isCurrent.`,
+		Annotations: readOnlyAnn(),
 	}, listProjectsHandler(client))
 }

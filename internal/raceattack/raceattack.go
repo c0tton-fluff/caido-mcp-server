@@ -31,6 +31,12 @@ import (
 // dialTimeout bounds how long a single connection dial may take.
 const dialTimeout = 10 * time.Second
 
+// idleReadTimeout bounds how long readResponse waits for more body bytes
+// before concluding the peer has stopped sending. A keep-alive connection
+// stays open after a complete response, so without an idle bound a short
+// body would block until dialTimeout waiting to fill the capture buffer.
+const idleReadTimeout = 500 * time.Millisecond
+
 // defaultBodyLimit and maxBodyLimit bound the per-response body capture.
 const (
 	defaultBodyLimit = 4096
@@ -124,7 +130,7 @@ func runOne(c *conn, release <-chan struct{}, primed, done *sync.WaitGroup, body
 	}
 	<-release
 	start := time.Now()
-	if _, werr := c.Conn.Write(last); werr != nil {
+	if _, werr := c.Write(last); werr != nil {
 		c.res.Error = fmt.Sprintf("final write: %v", werr)
 		return
 	}
@@ -174,9 +180,32 @@ func readResponse(c net.Conn, res *Result, bodyLimit int) {
 			break
 		}
 	}
-	body := make([]byte, bodyLimit)
-	n, _ := io.ReadFull(reader, body)
-	res.Body = string(body[:n])
+	res.Body = readBody(c, reader, bodyLimit)
+}
+
+// readBody reads up to bodyLimit body bytes, returning promptly once the
+// peer stops sending. It applies a short idle deadline per read so a
+// keep-alive connection with a complete small body does not block for the
+// full dialTimeout waiting to fill a fixed buffer, while a body larger than
+// bodyLimit is still truncated to bodyLimit.
+func readBody(c net.Conn, reader *bufio.Reader, bodyLimit int) string {
+	body := make([]byte, 0, bodyLimit)
+	buf := make([]byte, 4096)
+	for len(body) < bodyLimit {
+		_ = c.SetReadDeadline(time.Now().Add(idleReadTimeout))
+		want := len(buf)
+		if remaining := bodyLimit - len(body); remaining < want {
+			want = remaining
+		}
+		n, err := reader.Read(buf[:want])
+		if n > 0 {
+			body = append(body, buf[:n]...)
+		}
+		if err != nil {
+			break
+		}
+	}
+	return string(body)
 }
 
 // parseStatus extracts the numeric status code from an HTTP/1.1 status line.
@@ -225,7 +254,7 @@ func clampBodyLimit(bodyLimit int) int {
 func closeAll(conns []conn) {
 	for i := range conns {
 		if conns[i].Conn != nil {
-			_ = conns[i].Conn.Close()
+			_ = conns[i].Close()
 		}
 	}
 }

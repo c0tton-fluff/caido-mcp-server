@@ -55,13 +55,7 @@ func getAutomateEntryHandler(
 			)
 		}
 
-		limit := input.Limit
-		if limit <= 0 {
-			limit = 10
-		}
-		if limit > 100 {
-			limit = 100
-		}
+		limit := clampLimit(input.Limit, 10, 100)
 
 		// Get entry metadata
 		entryResp, err := client.Automate.GetEntry(ctx, input.ID)
@@ -103,12 +97,9 @@ func getAutomateEntryHandler(
 		reqEntry := reqResp.AutomateEntry
 		if reqEntry != nil {
 			reqs := reqEntry.Requests
-			if reqs.PageInfo.HasNextPage {
-				output.HasMore = true
-				if reqs.PageInfo.EndCursor != nil {
-					output.NextCursor = *reqs.PageInfo.EndCursor
-				}
-			}
+			output.HasMore, output.NextCursor = pageCursor(
+				reqs.PageInfo.HasNextPage, reqs.PageInfo.EndCursor,
+			)
 
 			for _, edge := range reqs.Edges {
 				r := edge.Node
@@ -159,5 +150,6 @@ func RegisterGetAutomateEntryTool(
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "caido_get_automate_entry",
 		Description: `Get fuzz results. Returns sequenceId/payloads/requestId/statusCode. Use limit/after for pagination.`,
+		Annotations: readOnlyAnn(),
 	}, getAutomateEntryHandler(client))
 }

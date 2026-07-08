@@ -54,5 +54,6 @@ func RegisterListPluginsTool(server *mcp.Server, client *caido.Client) {
 		Name:        "caido_list_plugins",
 		Description: `List installed Caido plugins with version info.`,
 		InputSchema: map[string]any{"type": "object"},
+		Annotations: readOnlyAnn(),
 	}, listPluginsHandler(client))
 }

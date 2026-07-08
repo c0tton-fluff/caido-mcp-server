@@ -236,5 +236,6 @@ func RegisterCreateTamperRuleTool(
 			`responseAll/responseHeader/responseBody/etc), ` +
 			`match (regex), replace (string), ` +
 			`condition (HTTPQL filter), sources (traffic sources).`,
+		Annotations: writeAnn(false, false, false),
 	}, createTamperRuleHandler(client))
 }

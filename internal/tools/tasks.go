@@ -55,6 +55,7 @@ func RegisterListTasksTool(server *mcp.Server, client *caido.Client) {
 		Name:        "caido_list_tasks",
 		Description: `List running background tasks (replay, workflow, export).`,
 		InputSchema: map[string]any{"type": "object"},
+		Annotations: readOnlyAnn(),
 	}, listTasksHandler(client))
 }
 
@@ -92,5 +93,6 @@ func RegisterCancelTaskTool(server *mcp.Server, client *caido.Client) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "caido_cancel_task",
 		Description: `Cancel a running background task by ID.`,
+		Annotations: writeAnn(false, true, false),
 	}, cancelTaskHandler(client))
 }

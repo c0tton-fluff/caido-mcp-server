@@ -98,5 +98,6 @@ func RegisterListEnvironmentsTool(
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "caido_list_environments",
 		Description: `List environments and their variables (tokens, keys, etc). Shows which is currently selected.`,
+		Annotations: readOnlyAnn(),
 	}, listEnvironmentsHandler(client))
 }

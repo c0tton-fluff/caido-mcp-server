@@ -43,7 +43,7 @@ func NewMCPTestEnv(t *testing.T, register func(server *mcp.Server, client *caido
 	if err != nil {
 		t.Fatalf("mcp client connect: %v", err)
 	}
-	t.Cleanup(func() { session.Close() })
+	t.Cleanup(func() { _ = session.Close() })
 
 	return &MCPTestEnv{
 		TestEnv:   env,

@@ -1,6 +1,7 @@
 package httputil
 
 import (
+	"regexp"
 	"strings"
 	"unicode/utf8"
 )
@@ -20,6 +21,17 @@ type Fingerprint struct {
 	Kind        ContentKind `json:"kind"`
 	ContentType string      `json:"contentType,omitempty"`
 	BodySize    int         `json:"bodySize"`
+	// StatusCode, Title, RedirectTarget, SetCookies, and WordCount are
+	// response-only fields populated by PopulateResponseDetails, not by
+	// FingerprintFromHeaders/FingerprintFromBody (those run inside
+	// ParseRaw before the status line and full header/body set are
+	// available together). Zero-valued when the caller never invokes
+	// PopulateResponseDetails, e.g. for request fingerprints.
+	StatusCode     int      `json:"statusCode,omitempty"`
+	Title          string   `json:"title,omitempty"`
+	RedirectTarget string   `json:"redirectTarget,omitempty"`
+	SetCookies     []string `json:"setCookies,omitempty"`
+	WordCount      int      `json:"wordCount,omitempty"`
 }
 
 func FingerprintFromHeaders(headers []Header, bodySize int) Fingerprint {
@@ -117,4 +129,86 @@ func headerValue(headers []Header, name string) string {
 		}
 	}
 	return ""
+}
+
+// headerValues returns every value of headers matching name
+// case-insensitively, in encounter order. Unlike headerValue, this
+// captures repeated headers such as Set-Cookie.
+func headerValues(headers []Header, name string) []string {
+	lower := strings.ToLower(name)
+	var values []string
+	for _, h := range headers {
+		if strings.ToLower(h.Name) == lower {
+			values = append(values, h.Value)
+		}
+	}
+	return values
+}
+
+var titleTagRe = regexp.MustCompile(`(?is)<title[^>]*>(.*?)</title>`)
+
+// ExtractTitle returns the trimmed text of the first <title> element found
+// in body, or "" when none is present (including for non-HTML bodies).
+// Matching is case-insensitive; markup nested inside the title is not
+// stripped.
+func ExtractTitle(body []byte) string {
+	m := titleTagRe.FindSubmatch(body)
+	if m == nil {
+		return ""
+	}
+	return strings.TrimSpace(string(m[1]))
+}
+
+// WordCount returns the whitespace-split token count of body.
+func WordCount(body []byte) int {
+	return len(strings.Fields(string(body)))
+}
+
+// SetCookieNames extracts cookie NAMES (never values) from a list of raw
+// Set-Cookie header values such as "session=abc123; Path=/". A value that
+// has already been redacted by ParseRaw's sensitive-header handling (i.e.
+// "[REDACTED]") yields no name, since the name is embedded in the same
+// value that was redacted; set CAIDO_ALLOW_SENSITIVE_HEADERS to recover
+// it. Always returns a non-nil (possibly empty) slice.
+func SetCookieNames(values []string) []string {
+	names := make([]string, 0, len(values))
+	for _, v := range values {
+		v = strings.TrimSpace(v)
+		if v == "" || v == "[REDACTED]" {
+			continue
+		}
+		if idx := strings.IndexByte(v, '='); idx > 0 {
+			names = append(names, strings.TrimSpace(v[:idx]))
+		}
+	}
+	return names
+}
+
+// PopulateResponseDetails fills in the response-only Fingerprint fields
+// (StatusCode, Title, RedirectTarget, SetCookies, WordCount) that
+// FingerprintFromHeaders/FingerprintFromBody cannot set on their own:
+// those two run inside ParseRaw before the response status line and the
+// full header list are available together with the decoded body. Callers
+// that already have all three (send_request, batch_send) call this once,
+// after building the base Fingerprint via ParseBase64/ParseRaw, passing
+// the same headers/body they parsed.
+//
+// ASSUMPTION: Title and WordCount reflect exactly the body slice passed
+// in. If the caller's body was truncated upstream (e.g. a user-requested
+// bodyLimit), so are these derived values -- callers wanting
+// fully-accurate results should pass an untruncated body where available.
+// No-op when fp is nil.
+func PopulateResponseDetails(fp *Fingerprint, statusCode int, headers []Header, body []byte) {
+	if fp == nil {
+		return
+	}
+	fp.StatusCode = statusCode
+	fp.RedirectTarget = headerValue(headers, "location")
+	fp.SetCookies = SetCookieNames(headerValues(headers, "set-cookie"))
+	if fp.Kind == KindHTML {
+		fp.Title = ExtractTitle(body)
+	}
+	if len(body) > 0 {
+		fp.WordCount = WordCount(body)
+	}
 }

@@ -72,9 +72,14 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # Use the latest stable Go so govulncheck evaluates the code against a
+      # patched standard library. Pinning to the go.mod minimum (go 1.25.0)
+      # would report stdlib CVEs already fixed in later 1.25.x patches, which
+      # are a toolchain-currency issue, not a defect in this code. test/lint
+      # still run on the declared minimum via go-version-file.
       - uses: actions/setup-go@v6
         with:
-          go-version-file: go.mod
+          go-version: stable
           cache: true
 
       - name: govulncheck

@@ -11,15 +11,19 @@ import (
 )
 
 // expectMissingRequiredRejected asserts the MCP layer rejects a call that omits a
-// required field. Fields tagged jsonschema:"required" are enforced by the transport,
-// so the omission surfaces as a CallTool transport error (not result.IsError). The
-// call is made with no arguments to trigger the schema's required-property check.
+// required field. The call is made with no arguments to trigger the missing-required
+// path. A rejection may surface either as a CallTool transport error or as a tool
+// result with IsError set: go-sdk v1.6+ returns tool/validation errors as an IsError
+// result (per the MCP spec) rather than a Go error, so accept both forms.
 func expectMissingRequiredRejected(t *testing.T, env *testutil.MCPTestEnv, name string) {
 	t.Helper()
-	_, err := env.MCPClient.CallTool(context.Background(), &mcp.CallToolParams{
+	res, err := env.MCPClient.CallTool(context.Background(), &mcp.CallToolParams{
 		Name: name,
 	})
-	if err == nil {
+	if err != nil {
+		return
+	}
+	if res == nil || !res.IsError {
 		t.Fatalf("CallTool(%s) expected rejection for missing required field", name)
 	}
 }

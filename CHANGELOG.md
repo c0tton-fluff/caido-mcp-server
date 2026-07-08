@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Changed
+- Bump `modelcontextprotocol/go-sdk` v1.4.1 -> v1.6.1. Tool and input-validation errors now surface as spec-compliant MCP `isError` results instead of transport (Go) errors; server-side required-field enforcement is unchanged (still validated against the tool's input schema). No API changes to this server's tools.
+
 ## [4.2.0] - 2026-07-08
 
 ### Security

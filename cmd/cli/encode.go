@@ -59,7 +59,13 @@ func runDecode(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			decoded, err = base64.URLEncoding.DecodeString(val)
 			if err != nil {
-				return fmt.Errorf("base64 decode: %w", err)
+				decoded, err = base64.RawStdEncoding.DecodeString(val)
+				if err != nil {
+					decoded, err = base64.RawURLEncoding.DecodeString(val)
+					if err != nil {
+						return fmt.Errorf("base64 decode: %w", err)
+					}
+				}
 			}
 		}
 		fmt.Println(string(decoded))

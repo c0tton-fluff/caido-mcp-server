@@ -75,11 +75,6 @@ func ParseRaw(
 ) *ParsedMessage {
 	result := &ParsedMessage{}
 	parts := bytes.SplitN(raw, []byte("\r\n\r\n"), 2)
-	if len(parts) == 1 {
-		// Fallback for messages using \n\n instead of \r\n\r\n
-		parts = bytes.SplitN(raw, []byte("\n\n"), 2)
-	}
-
 	headerPart := parts[0]
 	var bodyPart []byte
 	if len(parts) > 1 {
@@ -122,9 +117,6 @@ func ParseRaw(
 		result.Fingerprint = &fp
 	} else if len(bodyPart) > 0 {
 		fp := FingerprintFromBody(bodyPart)
-		result.Fingerprint = &fp
-	} else {
-		fp := Fingerprint{BodySize: 0, Kind: KindEmpty}
 		result.Fingerprint = &fp
 	}
 

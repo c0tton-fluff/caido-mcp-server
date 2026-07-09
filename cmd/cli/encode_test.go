@@ -16,8 +16,8 @@ func TestRunDecode_Base64Fallbacks(t *testing.T) {
 		in   string
 		want string
 	}{
-		{"std_padded", "aGVsbG8=", "hello"},           // Decodes via StdEncoding
-		{"rawurl_unpadded", "-_", "\xfb\xff"}, // Fails Std/URL/RawStd, decodes via RawURLEncoding
+		{"std_padded", "aGVsbG8=", "hello"},                    // Decodes via StdEncoding
+		{"rawurl_unpadded", "-_-_ABA", "\xfb\xff\xbf\x00\x10"}, // -_ chars + unpadded: fails Std/URL/RawStd, only RawURL
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

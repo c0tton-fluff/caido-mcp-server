@@ -27,10 +27,14 @@ func TestRunDecode_Base64Fallbacks(t *testing.T) {
 
 			err := runDecode(&cobra.Command{}, []string{"base64", c.in})
 
-			w.Close()
+			if cerr := w.Close(); cerr != nil {
+				t.Fatalf("close pipe writer: %v", cerr)
+			}
 			os.Stdout = old
 			var buf bytes.Buffer
-			io.Copy(&buf, r)
+			if _, cerr := io.Copy(&buf, r); cerr != nil {
+				t.Fatalf("copy pipe output: %v", cerr)
+			}
 
 			if err != nil {
 				t.Fatalf("expected no error, got %v", err)

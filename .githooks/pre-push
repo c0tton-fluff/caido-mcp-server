@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# Local pre-push gate mirroring CI's `lint` + `test` jobs (.github/workflows/ci.yml).
+# Catches gofmt/vet/golangci-lint/test failures before they reach CI.
+# govulncheck is intentionally omitted: it is a toolchain-currency check that
+# false-fails on already-patched stdlib CVEs under GOTOOLCHAIN=local, and CI
+# runs it on `go-version: stable` anyway.
+#
+# Enable once per clone with:  git config core.hooksPath .githooks
+set -euo pipefail
+
+echo "pre-push: gofmt check..."
+unformatted="$(gofmt -l .)"
+if [ -n "$unformatted" ]; then
+  echo "FAIL: the following files are not gofmt-formatted:"
+  echo "$unformatted"
+  echo "Fix with: gofmt -w ."
+  exit 1
+fi
+
+echo "pre-push: go vet..."
+go vet ./...
+
+echo "pre-push: golangci-lint (errcheck/govet/ineffassign/staticcheck/unused)..."
+if ! command -v golangci-lint >/dev/null 2>&1; then
+  echo "FAIL: golangci-lint not found. Install the CI-pinned version with:"
+  echo "  go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2"
+  exit 1
+fi
+golangci-lint run ./...
+
+echo "pre-push: go test -race..."
+go test ./... -race -count=1
+
+echo "pre-push: all checks passed."

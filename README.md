@@ -557,6 +557,17 @@ To report a security issue, open a GitHub issue or contact the maintainer direct
 3. `go build ./...` and `go test ./... -race`
 4. Open a PR (CI runs build, test, vet, staticcheck)
 
+### Local pre-push gate
+
+A tracked `.githooks/pre-push` runs the same checks as CI's `lint` + `test` jobs (gofmt, `go vet`, `golangci-lint run ./...`, `go test ./... -race`) so failures are caught before they reach CI. Enable it once per clone:
+
+```
+git config core.hooksPath .githooks
+go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2
+```
+
+If you use aider, `.aider.conf.yml` sets `auto-test` with the same command, so the gate runs after each edit.
+
 Built with [caido-community/sdk-go](https://github.com/caido-community/sdk-go) and [modelcontextprotocol/go-sdk](https://github.com/modelcontextprotocol/go-sdk).
 
 ## License

@@ -566,8 +566,6 @@ git config core.hooksPath .githooks
 go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2
 ```
 
-If you use aider, `.aider.conf.yml` sets `auto-test` with the same command, so the gate runs after each edit.
-
 Built with [caido-community/sdk-go](https://github.com/caido-community/sdk-go) and [modelcontextprotocol/go-sdk](https://github.com/modelcontextprotocol/go-sdk).
 
 ## License

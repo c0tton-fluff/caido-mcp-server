@@ -112,9 +112,17 @@ go build -ldflags "-X main.version=$(git describe --tags)" -o caido-mcp-server .
 
 ### Quick Start
 
-**Option A: Personal Access Token (recommended)**
+**Option A: Static access token (recommended)**
 
-Generate a PAT in Caido (Settings > Developer > Personal Access Tokens) and pass it via environment variable. No login command needed.
+This server talks to the **local Caido app's [GraphQL API](https://docs.caido.io/app/concepts/graphql#authentication)**, which authenticates with the **access token from your Caido login session** — *not* a Caido Cloud [Personal Access Token](https://docs.caido.io/dashboard/concepts/pat). A Cloud PAT (prefixed `caido_`) is for the cloud/dashboard API and will **not** authenticate against your local instance.
+
+Grab the access token from the Caido GUI: open developer tools (`CTRL`+`SHIFT`+`I`) and run this in the Console tab:
+
+```javascript
+JSON.parse(localStorage.CAIDO_AUTHENTICATION).accessToken
+```
+
+Pass it via the `CAIDO_ACCESS_TOKEN` environment variable. No login command needed.
 
 ```json
 {
@@ -124,12 +132,14 @@ Generate a PAT in Caido (Settings > Developer > Personal Access Tokens) and pass
       "args": ["serve"],
       "env": {
         "CAIDO_URL": "http://127.0.0.1:8080",
-        "CAIDO_PAT": "your-personal-access-token"
+        "CAIDO_ACCESS_TOKEN": "your-caido-access-token"
       }
     }
   }
 }
 ```
+
+> **Note:** this token expires after ~7 days; for a long-lived setup use **Option B** (OAuth), which refreshes automatically. The older `CAIDO_PAT` variable is still accepted as a deprecated alias for `CAIDO_ACCESS_TOKEN`.
 
 **Option B: OAuth device flow**
 
@@ -450,7 +460,7 @@ go build -o caido-cli ./cmd/cli
 
 ### Usage
 
-Requires authentication - either set `CAIDO_PAT` env var or run `caido-mcp-server login` first.
+Requires authentication - run `caido-mcp-server login` first to store a token. (The CLI reads the stored login token; it does not consume the `CAIDO_ACCESS_TOKEN` env var that the MCP server uses.)
 
 ```bash
 # Check connection and auth
@@ -515,7 +525,7 @@ caido-mcp-server/
     mcp/          MCP server (stdio transport)
     cli/          Standalone CLI
   internal/
-    auth/         OAuth device flow, PAT support, token store, auto-refresh
+    auth/         OAuth device flow, static access token (CAIDO_ACCESS_TOKEN), token store, auto-refresh
     httputil/     HTTP parsing, fingerprinting, response diff, CRLF normalization
     replay/       Replay session management, cookie jar, response polling
     resources/    MCP read-only resources (requests, sessions, sitemap, findings)
@@ -531,10 +541,10 @@ Both `cmd/mcp` and `cmd/cli` share `internal/` packages. The project uses [caido
 
 | Error | Fix |
 |-------|-----|
-| `Invalid token` | Check `CAIDO_PAT` value or run `caido-mcp-server login` again |
-| `token expired, no refresh token` | Use PAT auth instead, or re-login |
+| `Invalid token` | `CAIDO_ACCESS_TOKEN` must be the local Caido **access token** (not a Cloud PAT) — re-grab it from the GUI console, or run `caido-mcp-server login` again |
+| `token expired, no refresh token` | The static access token expires after ~7 days; re-grab it into `CAIDO_ACCESS_TOKEN`, or use `caido-mcp-server login` (OAuth auto-refreshes) |
 | `poll failed: timed out` | Target server slow; use `get_replay_entry` with the returned `entryId` |
-| `no authentication token found` | Set `CAIDO_PAT` env var or run `caido-mcp-server login` before `serve` |
+| `no authentication token found` | Set `CAIDO_ACCESS_TOKEN` env var or run `caido-mcp-server login` before `serve` |
 
 MCP server logs: `~/.cache/claude-cli-nodejs/*/mcp-logs-caido/`
 
@@ -544,7 +554,7 @@ MCP server logs: `~/.cache/claude-cli-nodejs/*/mcp-logs-caido/`
 
 Sensitive HTTP headers (Authorization, Cookie, Set-Cookie, API keys) are redacted everywhere output leaves the server - structured tool output, raw request/response dumps, fuzz templates, and the `caido://requests/{id}` resource all pass through a single redaction choke-point to prevent credential leakage to LLM context. On an authorized engagement you can opt out with `CAIDO_ALLOW_SENSITIVE_HEADERS` (see [Revealing sensitive headers](#revealing-sensitive-headers)). All string inputs are length-validated server-side, and request batch sizes are capped.
 
-PAT tokens and OAuth tokens are stored with 0600 permissions and never appear in process arguments or log output.
+Access tokens (via `CAIDO_ACCESS_TOKEN`) and OAuth tokens are stored with 0600 permissions and never appear in process arguments or log output.
 
 To report a security issue, open a GitHub issue or contact the maintainer directly.
 

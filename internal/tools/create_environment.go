@@ -35,8 +35,12 @@ func createEnvironmentHandler(
 			)
 		}
 
+		// The GraphQL schema requires a non-null variables list
+		// ([EnvironmentVariableInput!]!). A nil slice marshals to JSON null and
+		// the server rejects it, so send an empty (non-nil) slice.
 		resp, err := client.Environments.Create(ctx, &gen.CreateEnvironmentInput{
-			Name: input.Name,
+			Name:      input.Name,
+			Variables: []gen.EnvironmentVariableInput{},
 		})
 		if err != nil {
 			return nil, CreateEnvironmentOutput{}, err
@@ -45,10 +49,8 @@ func createEnvironmentHandler(
 		payload := resp.CreateEnvironment
 		if payload.Error != nil {
 			errType := "unknown"
-			if payload.Error != nil {
-				if tn := (*payload.Error).GetTypename(); tn != nil {
-					errType = *tn
-				}
+			if tn := (*payload.Error).GetTypename(); tn != nil {
+				errType = *tn
 			}
 			return nil, CreateEnvironmentOutput{}, fmt.Errorf(
 				"create environment failed: %s", errType,

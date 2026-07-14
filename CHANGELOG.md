@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Changed
+- **Static-token env var renamed to `CAIDO_ACCESS_TOKEN`.** This variable holds the local Caido app's GraphQL **access token** (from your login session), not a Caido Cloud Personal Access Token — the old `CAIDO_PAT` name was misleading. README now documents how to grab the access token from the Caido GUI.
+
+### Deprecated
+- **`CAIDO_PAT` is deprecated** in favor of `CAIDO_ACCESS_TOKEN`. It still works as a fallback, but the MCP server now prints a deprecation warning to stderr when it is used. It will be removed in a future release. (Supersedes the `CAIDO_PAT` guidance in [1.4.0].)
+
 ## [4.2.1] - 2026-07-08
 
 ### Changed

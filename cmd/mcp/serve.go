@@ -48,12 +48,12 @@ func runServe(cmd *cobra.Command, args []string) error {
 	var client *caido.Client
 
 	authMode := "OAuth (stored login)"
-	pat := os.Getenv("CAIDO_PAT")
-	if pat != "" {
-		authMode = "Personal Access Token (CAIDO_PAT)"
+	token, tokenSource := staticToken()
+	if token != "" {
+		authMode = "static access token (" + tokenSource + ")"
 		client, err = caido.NewClient(caido.Options{
 			URL:  caidoURL,
-			Auth: caido.PATAuth(pat),
+			Auth: caido.PATAuth(token),
 		})
 		if err != nil {
 			return fmt.Errorf("failed to create client: %w", err)
@@ -97,6 +97,21 @@ func runServe(cmd *cobra.Command, args []string) error {
 	}
 
 	return nil
+}
+
+// staticToken returns the Caido GraphQL access token from the environment,
+// preferring CAIDO_ACCESS_TOKEN and falling back to the legacy CAIDO_PAT. The second
+// return value names the variable the token was read from ("" if neither set).
+func staticToken() (token, source string) {
+	if t := os.Getenv("CAIDO_ACCESS_TOKEN"); t != "" {
+		return t, "CAIDO_ACCESS_TOKEN"
+	}
+	if t := os.Getenv("CAIDO_PAT"); t != "" {
+		fmt.Fprintln(os.Stderr,
+			"warning: CAIDO_PAT is deprecated; rename it to CAIDO_ACCESS_TOKEN")
+		return t, "CAIDO_PAT"
+	}
+	return "", ""
 }
 
 // logStartup prints a startup banner to stderr. It must never write to

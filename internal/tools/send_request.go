@@ -25,7 +25,7 @@ type SendRequestInput struct {
 	BodyLimit    int    `json:"bodyLimit,omitempty" jsonschema:"Response body byte limit (default 2000)"`
 	BodyOffset   int    `json:"bodyOffset,omitempty" jsonschema:"Response body byte offset (default 0)"`
 	UseCookieJar *bool  `json:"useCookieJar,omitempty" jsonschema:"Auto-inject session cookies and persist Set-Cookie (default true). Set false to disable for this call only."`
-	IncludeBody  *bool  `json:"includeBody,omitempty" jsonschema:"Include response body text in output (default true). The response fingerprint (title, redirect target, cookie names, word count) is always populated regardless of this setting."`
+	IncludeBody  *bool  `json:"includeBody,omitempty" jsonschema:"Include response body text in output (default true). The response fingerprint (title, redirect target, cookie names, word count, notable headers) is always populated regardless of this setting."`
 	Marker       string `json:"marker,omitempty" jsonschema:"Optional string to search for in the response body; when set, output.reflected reports whether it was found"`
 }
 
@@ -247,8 +247,13 @@ func sendRequestHandler(
 					if diff != nil {
 						output.Diff = diff
 						if diff.Same {
+							// The digest hashes status + body only, so "Same"
+							// proves the BODY repeated, not the headers. Clear
+							// the (large) body to save context, but keep headers
+							// -- a header can appear or change on a byte-identical
+							// body (X-Flag, rate-limit counters, tokens) and is
+							// exactly the signal a body-only dedup must not hide.
 							output.Response.Body = ""
-							output.Response.Headers = nil
 						}
 					}
 				}
@@ -287,7 +292,7 @@ func RegisterSendRequestTool(
 ) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "caido_send_request",
-		Description: `Send HTTP request and return response inline. Returns statusCode, headers, body, and a response fingerprint (title, redirect target, cookie names, word count). Polls up to 10s for response. On timeout, returns entryId for follow-up via get_replay_entry. Session cookies (Set-Cookie) auto-persist between calls sharing the same sessionId; pass useCookieJar:false to disable for a single call. Set includeBody:false to omit body text (fingerprint stays populated); pass marker to check for reflection in the response body.`,
+		Description: `Send HTTP request and return response inline. Returns statusCode, headers, body, and a response fingerprint (title, redirect target, cookie names, word count, and notableHeaders -- non-standard response headers such as Server, X-Powered-By, or custom X-* headers where app/flag signal often hides; ALWAYS check these on every response, including 4xx/5xx). Polls up to 10s for response. On timeout, returns entryId for follow-up via get_replay_entry. Session cookies (Set-Cookie) auto-persist between calls sharing the same sessionId; pass useCookieJar:false to disable for a single call. Set includeBody:false to omit body text (fingerprint stays populated); pass marker to check for reflection in the response body.`,
 		Annotations: writeAnn(false, false, true),
 	}, sendRequestHandler(client))
 }

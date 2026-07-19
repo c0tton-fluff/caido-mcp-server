@@ -32,6 +32,14 @@ type Fingerprint struct {
 	RedirectTarget string   `json:"redirectTarget,omitempty"`
 	SetCookies     []string `json:"setCookies,omitempty"`
 	WordCount      int      `json:"wordCount,omitempty"`
+	// NotableHeaders surfaces response headers that are NOT part of the
+	// common standard/transport/caching/security set (see commonHeaders).
+	// This is where custom application signal hides -- framework banners
+	// (Server, X-Powered-By), debug/trace headers, internal hostnames, and
+	// CTF-style flag headers (X-Flag) -- which the other fingerprint fields
+	// never capture. Populated by PopulateResponseDetails from the same
+	// (already sensitive-redacted) header list the caller parsed.
+	NotableHeaders []Header `json:"notableHeaders,omitempty"`
 }
 
 func FingerprintFromHeaders(headers []Header, bodySize int) Fingerprint {
@@ -164,6 +172,52 @@ func WordCount(body []byte) int {
 	return len(strings.Fields(string(body)))
 }
 
+// commonHeaders are ordinary response headers that carry no per-app signal:
+// content negotiation, transport, caching, CORS, and standard security
+// headers. NotableHeaders excludes these so what remains is the unusual
+// stuff worth a human's attention. location and set-cookie are excluded
+// because they already have dedicated fingerprint fields (RedirectTarget,
+// SetCookies).
+var commonHeaders = map[string]bool{
+	"location": true, "set-cookie": true,
+	"content-type": true, "content-length": true, "content-encoding": true,
+	"content-language": true, "content-range": true, "content-disposition": true,
+	"date": true, "connection": true, "keep-alive": true, "transfer-encoding": true,
+	"vary": true, "accept-ranges": true, "age": true, "expires": true,
+	"cache-control": true, "pragma": true, "etag": true, "last-modified": true,
+	"access-control-allow-origin": true, "access-control-allow-credentials": true,
+	"access-control-allow-methods": true, "access-control-allow-headers": true,
+	"access-control-expose-headers": true, "access-control-max-age": true,
+	"strict-transport-security": true, "x-content-type-options": true,
+	"x-frame-options": true, "x-xss-protection": true, "content-security-policy": true,
+	"referrer-policy": true, "permissions-policy": true, "cross-origin-opener-policy": true,
+	"cross-origin-resource-policy": true, "cross-origin-embedder-policy": true,
+	"report-to": true, "nel": true, "alt-svc": true, "upgrade": true,
+}
+
+// maxNotableHeaders caps NotableHeaders so a pathological response cannot
+// bloat the tool output; the dropped count is not reported since the intent
+// is a summary, not an exhaustive dump (the full list stays in Headers).
+const maxNotableHeaders = 25
+
+// NotableHeaders returns the subset of headers whose names are not in
+// commonHeaders, preserving encounter order and stopping at
+// maxNotableHeaders. Always returns nil (not an empty slice) when nothing is
+// notable, so it stays omitempty in JSON output.
+func NotableHeaders(headers []Header) []Header {
+	var notable []Header
+	for _, h := range headers {
+		if commonHeaders[strings.ToLower(h.Name)] {
+			continue
+		}
+		notable = append(notable, h)
+		if len(notable) == maxNotableHeaders {
+			break
+		}
+	}
+	return notable
+}
+
 // SetCookieNames extracts cookie NAMES (never values) from a list of raw
 // Set-Cookie header values such as "session=abc123; Path=/". A value that
 // has already been redacted by ParseRaw's sensitive-header handling (i.e.
@@ -205,6 +259,7 @@ func PopulateResponseDetails(fp *Fingerprint, statusCode int, headers []Header, 
 	fp.StatusCode = statusCode
 	fp.RedirectTarget = headerValue(headers, "location")
 	fp.SetCookies = SetCookieNames(headerValues(headers, "set-cookie"))
+	fp.NotableHeaders = NotableHeaders(headers)
 	if fp.Kind == KindHTML {
 		fp.Title = ExtractTitle(body)
 	}

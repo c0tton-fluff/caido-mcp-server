@@ -1,6 +1,7 @@
 package httputil
 
 import (
+	"strconv"
 	"testing"
 )
 
@@ -276,6 +277,53 @@ func TestPopulateResponseDetails(t *testing.T) {
 		}
 		if fp.StatusCode != 200 {
 			t.Fatalf("want statusCode 200, got %d", fp.StatusCode)
+		}
+	})
+}
+
+func TestNotableHeaders(t *testing.T) {
+	t.Run("surfaces custom header, drops common ones", func(t *testing.T) {
+		headers := []Header{
+			{Name: "Content-Type", Value: "text/html"},
+			{Name: "Date", Value: "Mon, 01 Jan 2026 00:00:00 GMT"},
+			{Name: "Cache-Control", Value: "no-store"},
+			{Name: "X-Frame-Options", Value: "DENY"},
+			{Name: "Server", Value: "nginx"},
+			{Name: "X-Flag", Value: "flag{example}"},
+		}
+		got := NotableHeaders(headers)
+		if len(got) != 2 {
+			t.Fatalf("want 2 notable headers, got %d (%v)", len(got), got)
+		}
+		if got[0].Name != "Server" || got[1].Name != "X-Flag" {
+			t.Fatalf("want [Server X-Flag] in order, got %v", got)
+		}
+	})
+
+	t.Run("location and set-cookie excluded (dedicated fields)", func(t *testing.T) {
+		headers := []Header{
+			{Name: "Location", Value: "/dashboard"},
+			{Name: "Set-Cookie", Value: "session=abc"},
+		}
+		if got := NotableHeaders(headers); got != nil {
+			t.Fatalf("want nil, got %v", got)
+		}
+	})
+
+	t.Run("nothing notable returns nil", func(t *testing.T) {
+		headers := []Header{{Name: "Content-Type", Value: "application/json"}}
+		if got := NotableHeaders(headers); got != nil {
+			t.Fatalf("want nil for omitempty, got %v", got)
+		}
+	})
+
+	t.Run("caps at maxNotableHeaders", func(t *testing.T) {
+		headers := make([]Header, maxNotableHeaders+10)
+		for i := range headers {
+			headers[i] = Header{Name: "X-Custom-" + strconv.Itoa(i), Value: "v"}
+		}
+		if got := NotableHeaders(headers); len(got) != maxNotableHeaders {
+			t.Fatalf("want %d, got %d", maxNotableHeaders, len(got))
 		}
 	})
 }

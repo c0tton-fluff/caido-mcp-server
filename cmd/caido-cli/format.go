@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/c0tton-fluff/caido-mcp-server/internal/httputil"
+	"github.com/c0tton-fluff/caido-mcp-server/v4/internal/httputil"
 )
 
 var secHeaders = map[string]bool{

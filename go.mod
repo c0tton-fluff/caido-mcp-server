@@ -1,4 +1,4 @@
-module github.com/c0tton-fluff/caido-mcp-server
+module github.com/c0tton-fluff/caido-mcp-server/v4
 
 go 1.25.0
 

@@ -7,8 +7,8 @@ import (
 	caido "github.com/caido-community/sdk-go"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/c0tton-fluff/caido-mcp-server/internal/testutil"
-	"github.com/c0tton-fluff/caido-mcp-server/internal/tools"
+	"github.com/c0tton-fluff/caido-mcp-server/v4/internal/testutil"
+	"github.com/c0tton-fluff/caido-mcp-server/v4/internal/tools"
 )
 
 // b64 encodes a string the way the GraphQL Blob scalar is serialized, so the

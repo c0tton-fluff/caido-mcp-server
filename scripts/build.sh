@@ -26,7 +26,7 @@ for platform in "${PLATFORMS[@]}"; do
 
   echo "  ${suffix}"
 
-  LDFLAGS="-s -w -X github.com/c0tton-fluff/caido-mcp-server/internal/buildinfo.version=${VERSION}"
+  LDFLAGS="-s -w -X github.com/c0tton-fluff/caido-mcp-server/v4/internal/buildinfo.version=${VERSION}"
 
   # MCP server
   GOOS="$GOOS" GOARCH="$GOARCH" CGO_ENABLED=0 \

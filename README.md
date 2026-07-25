@@ -102,7 +102,7 @@ Or download a pre-built binary from [Releases](https://github.com/c0tton-fluff/c
 Or install with the Go toolchain (Go 1.25+):
 
 ```bash
-go install github.com/c0tton-fluff/caido-mcp-server/cmd/caido-mcp-server@latest
+go install github.com/c0tton-fluff/caido-mcp-server/v4/cmd/caido-mcp-server@latest
 ```
 
 The binary lands in `$(go env GOPATH)/bin` (add it to your `PATH`). The installed binary reports its module version via `caido-mcp-server --version`.
@@ -113,7 +113,7 @@ The binary lands in `$(go env GOPATH)/bin` (add it to your `PATH`). The installe
 ```bash
 git clone https://github.com/c0tton-fluff/caido-mcp-server.git
 cd caido-mcp-server
-go build -ldflags "-X github.com/c0tton-fluff/caido-mcp-server/internal/buildinfo.version=$(git describe --tags)" -o caido-mcp-server ./cmd/caido-mcp-server
+go build -ldflags "-X github.com/c0tton-fluff/caido-mcp-server/v4/internal/buildinfo.version=$(git describe --tags)" -o caido-mcp-server ./cmd/caido-mcp-server
 ```
 
 </details>
@@ -458,7 +458,7 @@ Or download from [Releases](https://github.com/c0tton-fluff/caido-mcp-server/rel
 Or install with the Go toolchain (Go 1.25+):
 
 ```bash
-go install github.com/c0tton-fluff/caido-mcp-server/cmd/caido-cli@latest
+go install github.com/c0tton-fluff/caido-mcp-server/v4/cmd/caido-cli@latest
 ```
 
 <details>

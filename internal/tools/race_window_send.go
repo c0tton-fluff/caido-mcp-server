@@ -11,8 +11,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/c0tton-fluff/caido-mcp-server/internal/httputil"
-	"github.com/c0tton-fluff/caido-mcp-server/internal/raceattack"
+	"github.com/c0tton-fluff/caido-mcp-server/v4/internal/httputil"
+	"github.com/c0tton-fluff/caido-mcp-server/v4/internal/raceattack"
 	caido "github.com/caido-community/sdk-go"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )

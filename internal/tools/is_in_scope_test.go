@@ -3,7 +3,7 @@ package tools
 import (
 	"testing"
 
-	"github.com/c0tton-fluff/caido-mcp-server/internal/testutil"
+	"github.com/c0tton-fluff/caido-mcp-server/v4/internal/testutil"
 	caido "github.com/caido-community/sdk-go"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )

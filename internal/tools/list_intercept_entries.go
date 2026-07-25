@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/c0tton-fluff/caido-mcp-server/internal/httputil"
+	"github.com/c0tton-fluff/caido-mcp-server/v4/internal/httputil"
 	caido "github.com/caido-community/sdk-go"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )

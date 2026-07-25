@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/c0tton-fluff/caido-mcp-server/internal/buildinfo"
+	"github.com/c0tton-fluff/caido-mcp-server/v4/internal/buildinfo"
 	"github.com/spf13/cobra"
 )
 

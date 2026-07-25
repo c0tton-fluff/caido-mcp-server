@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/c0tton-fluff/caido-mcp-server/internal/replay"
-	"github.com/c0tton-fluff/caido-mcp-server/internal/tools"
+	"github.com/c0tton-fluff/caido-mcp-server/v4/internal/replay"
+	"github.com/c0tton-fluff/caido-mcp-server/v4/internal/tools"
 	caido "github.com/caido-community/sdk-go"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )

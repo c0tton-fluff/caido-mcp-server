@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/c0tton-fluff/caido-mcp-server/internal/replay"
+	"github.com/c0tton-fluff/caido-mcp-server/v4/internal/replay"
 	"github.com/spf13/cobra"
 )
 

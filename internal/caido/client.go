@@ -121,7 +121,7 @@ func (c *Client) ListRequests(ctx context.Context, opts ListRequestsOptions) (*L
 	}
 
 	if opts.Filter != "" {
-		req.Var("filter", opts.Filter)
+		req.Var("filter", map[string]string{"code": opts.Filter})
 	}
 
 	var resp ListRequestsResult
@@ -500,7 +500,7 @@ func (c *Client) ListFindings(ctx context.Context, opts ListFindingsOptions) (*L
 	}
 
 	if opts.Filter != "" {
-		req.Var("filter", opts.Filter)
+		req.Var("filter", map[string]string{"code": opts.Filter})
 	}
 
 	var resp ListFindingsResult

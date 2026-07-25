@@ -4,13 +4,15 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/c0tton-fluff/caido-mcp-server/internal/buildinfo"
 	"github.com/spf13/cobra"
 )
 
 var rootCmd = &cobra.Command{
-	Use:   "caido-cli",
-	Short: "Pentest HTTP client through Caido proxy",
-	Long:  "CLI for Caido proxy -- send requests, browse history, encode/decode.",
+	Use:     "caido-cli",
+	Short:   "Pentest HTTP client through Caido proxy",
+	Long:    "CLI for Caido proxy -- send requests, browse history, encode/decode.",
+	Version: buildinfo.Version(),
 }
 
 func main() {

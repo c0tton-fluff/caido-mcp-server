@@ -1,6 +1,6 @@
-# Binaries
-caido-mcp-server
-Caido-CLI/caido
+# Binaries (root-anchored so they never match cmd/caido-mcp-server/ or cmd/caido-cli/)
+/caido-mcp-server
+/caido-cli
 dist/
 *.exe
 
@@ -15,9 +15,6 @@ coverage.out
 # Token
 ~/.caido-mcp/
 .claude/
-
-/mcp
-/cli
 
 # Tool scratch output
 .codex/

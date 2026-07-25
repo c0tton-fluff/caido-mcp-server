@@ -99,13 +99,21 @@ curl -fsSL https://raw.githubusercontent.com/c0tton-fluff/caido-mcp-server/main/
 
 Or download a pre-built binary from [Releases](https://github.com/c0tton-fluff/caido-mcp-server/releases) (macOS, Linux, Windows - amd64/arm64).
 
+Or install with the Go toolchain (Go 1.25+):
+
+```bash
+go install github.com/c0tton-fluff/caido-mcp-server/cmd/caido-mcp-server@latest
+```
+
+The binary lands in `$(go env GOPATH)/bin` (add it to your `PATH`). The installed binary reports its module version via `caido-mcp-server --version`.
+
 <details>
 <summary>Build from source</summary>
 
 ```bash
 git clone https://github.com/c0tton-fluff/caido-mcp-server.git
 cd caido-mcp-server
-go build -ldflags "-X main.version=$(git describe --tags)" -o caido-mcp-server ./cmd/mcp
+go build -ldflags "-X github.com/c0tton-fluff/caido-mcp-server/internal/buildinfo.version=$(git describe --tags)" -o caido-mcp-server ./cmd/caido-mcp-server
 ```
 
 </details>
@@ -447,13 +455,19 @@ curl -fsSL https://raw.githubusercontent.com/c0tton-fluff/caido-mcp-server/main/
 
 Or download from [Releases](https://github.com/c0tton-fluff/caido-mcp-server/releases).
 
+Or install with the Go toolchain (Go 1.25+):
+
+```bash
+go install github.com/c0tton-fluff/caido-mcp-server/cmd/caido-cli@latest
+```
+
 <details>
 <summary>Build from source</summary>
 
 ```bash
 git clone https://github.com/c0tton-fluff/caido-mcp-server.git
 cd caido-mcp-server
-go build -o caido-cli ./cmd/cli
+go build -o caido-cli ./cmd/caido-cli
 ```
 
 </details>
@@ -522,10 +536,11 @@ caido-cli encode hex "test"
 ```
 caido-mcp-server/
   cmd/
-    mcp/          MCP server (stdio transport)
-    cli/          Standalone CLI
+    caido-mcp-server/   MCP server (stdio transport)
+    caido-cli/          Standalone CLI
   internal/
     auth/         OAuth device flow, static access token (CAIDO_ACCESS_TOKEN), token store, auto-refresh
+    buildinfo/    Version resolution (ldflag or go-install module version)
     httputil/     HTTP parsing, fingerprinting, response diff, CRLF normalization
     replay/       Replay session management, cookie jar, response polling
     resources/    MCP read-only resources (requests, sessions, sitemap, findings)
@@ -533,7 +548,7 @@ caido-mcp-server/
     testutil/     Mock GraphQL server, MCP test helpers, fixtures
 ```
 
-Both `cmd/mcp` and `cmd/cli` share `internal/` packages. The project uses [caido-community/sdk-go](https://github.com/caido-community/sdk-go) for all GraphQL communication with Caido.
+The `cmd/` directory names match the installed binary names so `go install .../cmd/caido-mcp-server@latest` produces a correctly-named binary. Both commands share `internal/` packages. The project uses [caido-community/sdk-go](https://github.com/caido-community/sdk-go) for all GraphQL communication with Caido.
 
 ---
 

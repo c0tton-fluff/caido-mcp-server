@@ -26,15 +26,17 @@ for platform in "${PLATFORMS[@]}"; do
 
   echo "  ${suffix}"
 
+  LDFLAGS="-s -w -X github.com/c0tton-fluff/caido-mcp-server/internal/buildinfo.version=${VERSION}"
+
   # MCP server
   GOOS="$GOOS" GOARCH="$GOARCH" CGO_ENABLED=0 \
-    go build -C "$ROOT" -ldflags="-s -w -X main.version=${VERSION}" \
-    -o "${DIST}/caido-mcp-server-${suffix}${ext}" ./cmd/mcp
+    go build -C "$ROOT" -ldflags="$LDFLAGS" \
+    -o "${DIST}/caido-mcp-server-${suffix}${ext}" ./cmd/caido-mcp-server
 
   # CLI
   GOOS="$GOOS" GOARCH="$GOARCH" CGO_ENABLED=0 \
-    go build -C "$ROOT" -ldflags="-s -w" \
-    -o "${DIST}/caido-cli-${suffix}${ext}" ./cmd/cli
+    go build -C "$ROOT" -ldflags="$LDFLAGS" \
+    -o "${DIST}/caido-cli-${suffix}${ext}" ./cmd/caido-cli
 done
 
 echo ""

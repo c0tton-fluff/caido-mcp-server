@@ -4,16 +4,15 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/c0tton-fluff/caido-mcp-server/internal/buildinfo"
 	"github.com/spf13/cobra"
 )
-
-var version = "dev"
 
 var rootCmd = &cobra.Command{
 	Use:     "caido-mcp-server",
 	Short:   "MCP server for Caido proxy",
 	Long:    `A Model Context Protocol (MCP) server that provides access to Caido proxy history.`,
-	Version: version,
+	Version: buildinfo.Version(),
 }
 
 func Execute() {

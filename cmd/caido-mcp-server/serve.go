@@ -8,6 +8,7 @@ import (
 	"syscall"
 
 	"github.com/c0tton-fluff/caido-mcp-server/internal/auth"
+	"github.com/c0tton-fluff/caido-mcp-server/internal/buildinfo"
 	"github.com/c0tton-fluff/caido-mcp-server/internal/resources"
 	"github.com/c0tton-fluff/caido-mcp-server/internal/tools"
 	caido "github.com/caido-community/sdk-go"
@@ -80,7 +81,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 	server := mcp.NewServer(
 		&mcp.Implementation{
 			Name:    "caido-mcp-server",
-			Version: version,
+			Version: buildinfo.Version(),
 		},
 		nil,
 	)
@@ -118,7 +119,7 @@ func staticToken() (token, source string) {
 // stdout: stdout is the MCP JSON-RPC channel and any extra bytes there
 // would corrupt the protocol stream.
 func logStartup(caidoURL, authMode string, toolCount, resourceCount int) {
-	fmt.Fprintf(os.Stderr, "caido-mcp-server %s\n", version)
+	fmt.Fprintf(os.Stderr, "caido-mcp-server %s\n", buildinfo.Version())
 	fmt.Fprintf(os.Stderr, "  Caido URL:  %s\n", caidoURL)
 	fmt.Fprintf(os.Stderr, "  Auth:       %s\n", authMode)
 	fmt.Fprintf(os.Stderr, "  Registered: %d tools, %d resources\n",

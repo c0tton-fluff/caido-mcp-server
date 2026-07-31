@@ -208,6 +208,7 @@ func RegisterDiffResponsesTool(
 ) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "caido_diff_responses",
+		Title:       "Diff Responses",
 		Description: `Compare two responses by Caido request ID (idA, idB). Returns status/size change flags and a compact body/header diff summary. Does not dump full bodies.`,
 		Annotations: readOnlyAnn(),
 	}, diffResponsesHandler(client))

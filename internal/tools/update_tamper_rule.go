@@ -152,7 +152,8 @@ func RegisterUpdateTamperRuleTool(
 	server *mcp.Server, client *caido.Client,
 ) {
 	mcp.AddTool(server, &mcp.Tool{
-		Name: "caido_update_tamper_rule",
+		Name:  "caido_update_tamper_rule",
+		Title: "Update Tamper Rule",
 		Description: `Update an existing Match & Replace ` +
 			`(tamper) rule. Params: id (required), ` +
 			`name (required), section (required: requestAll/` +

@@ -41,6 +41,7 @@ func RegisterInterceptStatusTool(
 ) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "caido_intercept_status",
+		Title:       "Get Intercept Status",
 		Description: `Get intercept status (PAUSED or RUNNING).`,
 		Annotations: readOnlyAnn(),
 	}, interceptStatusHandler(client))

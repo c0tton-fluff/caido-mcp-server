@@ -292,6 +292,7 @@ func RegisterSendRequestTool(
 ) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "caido_send_request",
+		Title:       "Send HTTP Request",
 		Description: `Send an HTTP request; returns statusCode, headers, body, and a response fingerprint (title, redirect, cookie names, word count, notableHeaders). Polls up to 10s; on timeout returns entryId for get_replay_entry. Session cookies auto-persist across calls with the same sessionId (useCookieJar:false to disable). includeBody:false omits body text; marker checks response body for reflection. See README "Response fingerprinting" for field details.`,
 		Annotations: writeAnn(false, false, true),
 	}, sendRequestHandler(client))

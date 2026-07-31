@@ -111,7 +111,8 @@ func RegisterListTamperRulesTool(
 	server *mcp.Server, client *caido.Client,
 ) {
 	mcp.AddTool(server, &mcp.Tool{
-		Name: "caido_list_tamper_rules",
+		Name:  "caido_list_tamper_rules",
+		Title: "List Tamper Rules",
 		Description: `List Match & Replace (tamper) rule ` +
 			`collections and their rules. Returns ` +
 			`collection id/name with nested rules ` +

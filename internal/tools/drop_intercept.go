@@ -54,6 +54,7 @@ func RegisterDropInterceptTool(
 ) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "caido_drop_intercept",
+		Title:       "Drop Intercepted Request",
 		Description: `Drop intercepted request (do not forward to server). The client receives no response.`,
 		Annotations: writeAnn(true, true, false),
 	}, dropInterceptHandler(client))

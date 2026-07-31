@@ -69,7 +69,8 @@ func RegisterToggleTamperRuleTool(
 	server *mcp.Server, client *caido.Client,
 ) {
 	mcp.AddTool(server, &mcp.Tool{
-		Name: "caido_toggle_tamper_rule",
+		Name:  "caido_toggle_tamper_rule",
+		Title: "Toggle Tamper Rule",
 		Description: `Enable or disable a Match & Replace ` +
 			`(tamper) rule. Params: id (required), ` +
 			`enabled (true/false).`,

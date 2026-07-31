@@ -61,6 +61,7 @@ func deleteEnvironmentHandler(
 func RegisterDeleteEnvironmentTool(server *mcp.Server, client *caido.Client) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "caido_delete_environment",
+		Title:       "Delete Environment",
 		Description: `Delete an environment by ID. Note: the Global environment cannot be deleted.`,
 		Annotations: writeAnn(true, true, false),
 	}, deleteEnvironmentHandler(client))

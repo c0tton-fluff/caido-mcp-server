@@ -71,6 +71,7 @@ func RegisterForwardInterceptTool(
 ) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "caido_forward_intercept",
+		Title:       "Forward Intercepted Request",
 		Description: `Forward intercepted request. Optionally modify with base64-encoded raw HTTP request. Params: id (required), raw (optional).`,
 		Annotations: writeAnn(false, false, true),
 	}, forwardInterceptHandler(client))

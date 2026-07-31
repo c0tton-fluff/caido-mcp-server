@@ -24,6 +24,9 @@ func TestAllToolsRegisterWithoutPanic(t *testing.T) {
 		if tool.Description == "" {
 			t.Errorf("tool %q has empty description", tool.Name)
 		}
+		if tool.Title == "" {
+			t.Errorf("tool %q has empty title", tool.Name)
+		}
 		if tool.InputSchema == nil {
 			t.Errorf("tool %q has nil InputSchema", tool.Name)
 		}

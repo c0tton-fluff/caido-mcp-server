@@ -67,7 +67,8 @@ func convertBodyHandler(
 // RegisterConvertBodyTool registers the tool with the MCP server.
 func RegisterConvertBodyTool(server *mcp.Server, client *caido.Client) {
 	mcp.AddTool(server, &mcp.Tool{
-		Name: "caido_convert_body",
+		Name:  "caido_convert_body",
+		Title: "Convert Body",
 		Description: `Convert a request/response body between formats. ` +
 			`Formats: json, form (x-www-form-urlencoded), xml, multipart ` +
 			`(form-data). Params: body, from, to. ` +

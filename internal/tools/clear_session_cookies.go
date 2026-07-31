@@ -57,6 +57,7 @@ func RegisterClearSessionCookiesTool(
 ) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "caido_clear_session_cookies",
+		Title:       "Clear Session Cookies",
 		Description: `Wipe the in-memory cookie jar for a replay session. Use to force re-login flows or recover from poisoned cookie state. Returns sessionId and cleared status.`,
 		Annotations: writeAnn(false, true, false),
 	}, clearSessionCookiesHandler(client))

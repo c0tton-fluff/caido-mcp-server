@@ -97,6 +97,7 @@ func RegisterGetSessionCookiesTool(
 ) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "caido_get_session_cookies",
+		Title:       "Get Session Cookies",
 		Description: `List cookies stored in the session jar that match a URL (RFC 6265). Returns metadata only (name/length/domain/path/flags); values are not exposed to avoid leaking tokens into model context. Use to debug cookie persistence between send_request calls.`,
 		Annotations: readOnlyAnn(),
 	}, getSessionCookiesHandler(client))

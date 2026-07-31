@@ -111,6 +111,7 @@ func RegisterListInterceptEntriesTool(
 ) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "caido_list_intercept_entries",
+		Title:       "List Intercept Entries",
 		Description: `List queued intercept entries. Filter with httpql. Returns id/method/url/status. Use with forward/drop tools.`,
 		Annotations: readOnlyAnn(),
 	}, listInterceptEntriesHandler(client))

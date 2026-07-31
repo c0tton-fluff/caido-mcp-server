@@ -50,7 +50,8 @@ func RegisterDeleteTamperRuleTool(
 	server *mcp.Server, client *caido.Client,
 ) {
 	mcp.AddTool(server, &mcp.Tool{
-		Name: "caido_delete_tamper_rule",
+		Name:  "caido_delete_tamper_rule",
+		Title: "Delete Tamper Rule",
 		Description: `Delete a Match & Replace (tamper) rule ` +
 			`by ID. Params: id (required).`,
 		Annotations: writeAnn(true, true, false),

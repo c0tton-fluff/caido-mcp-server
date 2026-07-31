@@ -38,6 +38,7 @@ func RegisterDeleteReplayCollectionTool(
 ) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "caido_delete_replay_collection",
+		Title:       "Delete Replay Collection",
 		Description: `Delete a replay collection. Sessions in the collection will not be deleted.`,
 		Annotations: writeAnn(true, true, false),
 	}, deleteReplayCollectionHandler(client))

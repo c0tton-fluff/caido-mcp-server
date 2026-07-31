@@ -139,7 +139,8 @@ func RegisterRunWorkflowTool(
 	server *mcp.Server, client *caido.Client,
 ) {
 	mcp.AddTool(server, &mcp.Tool{
-		Name: "caido_run_workflow",
+		Name:  "caido_run_workflow",
+		Title: "Run Workflow",
 		Description: `Execute a workflow. Params: id (required), ` +
 			`type (active/convert), request_id (for active), ` +
 			`input (for convert). Active workflows run on a ` +

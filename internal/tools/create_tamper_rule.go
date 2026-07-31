@@ -229,7 +229,8 @@ func RegisterCreateTamperRuleTool(
 	server *mcp.Server, client *caido.Client,
 ) {
 	mcp.AddTool(server, &mcp.Tool{
-		Name: "caido_create_tamper_rule",
+		Name:  "caido_create_tamper_rule",
+		Title: "Create Tamper Rule",
 		Description: `Create a Match & Replace (tamper) rule. ` +
 			`Params: collection_id (required), name (required), ` +
 			`section (required: requestAll/requestHeader/requestBody/` +

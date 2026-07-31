@@ -95,7 +95,8 @@ func listWsStreamsHandler(
 // RegisterListWsStreamsTool registers the tool with the MCP server
 func RegisterListWsStreamsTool(server *mcp.Server, client *caido.Client) {
 	mcp.AddTool(server, &mcp.Tool{
-		Name: "caido_list_ws_streams",
+		Name:  "caido_list_ws_streams",
+		Title: "List WebSocket Streams",
 		Description: `List WebSocket streams (connections) from the WebSocket tab. ` +
 			`Returns id/host/port/path/direction/source. ` +
 			`Use the stream id with caido_list_ws_messages to read frames. ` +

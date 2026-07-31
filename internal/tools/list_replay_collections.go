@@ -55,6 +55,7 @@ func RegisterListReplayCollectionsTool(
 ) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "caido_list_replay_collections",
+		Title:       "List Replay Collections",
 		Description: `List replay collections. Returns id and name for each collection.`,
 		InputSchema: map[string]any{"type": "object"},
 		Annotations: readOnlyAnn(),

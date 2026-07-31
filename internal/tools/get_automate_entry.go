@@ -149,6 +149,7 @@ func RegisterGetAutomateEntryTool(
 ) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "caido_get_automate_entry",
+		Title:       "Get Automate Entry",
 		Description: `Get fuzz results. Returns sequenceId/payloads/requestId/statusCode. Use limit/after for pagination.`,
 		Annotations: readOnlyAnn(),
 	}, getAutomateEntryHandler(client))

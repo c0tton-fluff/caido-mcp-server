@@ -98,6 +98,7 @@ func RegisterCreateFindingTool(
 ) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "caido_create_finding",
+		Title:       "Create Finding",
 		Description: `Create finding. Params: requestId, title, description (optional).`,
 		Annotations: writeAnn(false, false, false),
 	}, createFindingHandler(client))

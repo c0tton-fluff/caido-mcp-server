@@ -213,6 +213,7 @@ func RegisterGetRequestTool(
 ) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "caido_get_request",
+		Title:       "Get Request",
 		Description: `Get request details. Default: metadata only (saves tokens). Use include=[requestHeaders,requestBody,responseHeaders,responseBody] for more. Body limit: 2KB default.`,
 		Annotations: readOnlyAnn(),
 	}, getRequestHandler(client))

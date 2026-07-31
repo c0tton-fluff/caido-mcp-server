@@ -54,6 +54,7 @@ func listHostedFilesHandler(
 func RegisterListHostedFilesTool(server *mcp.Server, client *caido.Client) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "caido_list_hosted_files",
+		Title:       "List Hosted Files",
 		Description: `List hosted files available in Caido for serving payloads.`,
 		InputSchema: map[string]any{"type": "object"},
 		Annotations: readOnlyAnn(),

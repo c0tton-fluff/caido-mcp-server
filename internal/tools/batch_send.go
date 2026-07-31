@@ -183,6 +183,7 @@ func RegisterBatchSendTool(
 ) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "caido_batch_send",
+		Title:       "Batch Send Requests",
 		Description: `Send multiple HTTP requests in parallel (max 50). Use for BAC token sweeps, parameter fuzzing, or endpoint sweeps. Returns statusCode, headers, and a response fingerprint per request; body text omitted by default (includeBody:true to include). marker flags reflection per result. Set sessionId per request to auto-inject and persist session cookies. See README "Response fingerprinting" for field details.`,
 		Annotations: writeAnn(false, false, true),
 	}, batchSendHandler(client))

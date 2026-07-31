@@ -116,6 +116,7 @@ func RegisterAutomateTaskControlTool(
 ) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "caido_automate_task_control",
+		Title:       "Control Automate Task",
 		Description: `Control fuzzing tasks. Actions: start (needs session_id), pause/resume/cancel (needs task_id).`,
 		Annotations: writeAnn(false, false, false),
 	}, automateTaskControlHandler(client))

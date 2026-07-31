@@ -76,7 +76,8 @@ func RegisterListProjectsTool(
 	server *mcp.Server, client *caido.Client,
 ) {
 	mcp.AddTool(server, &mcp.Tool{
-		Name: "caido_list_projects",
+		Name:  "caido_list_projects",
+		Title: "List Projects",
 		Description: `List projects. Returns id/name/status/version. ` +
 			`Current project marked with isCurrent.`,
 		Annotations: readOnlyAnn(),

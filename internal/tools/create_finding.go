@@ -6,6 +6,7 @@ import (
 
 	caido "github.com/caido-community/sdk-go"
 	gen "github.com/caido-community/sdk-go/graphql"
+	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -101,5 +102,14 @@ func RegisterCreateFindingTool(
 		Title:       "Create Finding",
 		Description: `Create finding. Params: requestId, title, description (optional).`,
 		Annotations: writeAnn(false, false, false),
+		// Mirror the handler's existing length checks into the schema.
+		InputSchema: schemaFor[CreateFindingInput](func(s *jsonschema.Schema) {
+			if p := prop(s, "title"); p != nil {
+				p.MaxLength = intPtr(500)
+			}
+			if p := prop(s, "description"); p != nil {
+				p.MaxLength = intPtr(10000)
+			}
+		}),
 	}, createFindingHandler(client))
 }

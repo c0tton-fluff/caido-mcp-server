@@ -7,6 +7,7 @@ import (
 	gql "github.com/Khan/genqlient/graphql"
 	caido "github.com/caido-community/sdk-go"
 	gen "github.com/caido-community/sdk-go/graphql"
+	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -237,6 +238,14 @@ func RegisterCreateTamperRuleTool(
 			`responseAll/responseHeader/responseBody/etc), ` +
 			`match (regex), replace (string), ` +
 			`condition (HTTPQL filter), sources (traffic sources).`,
+		InputSchema: schemaFor[CreateTamperRuleInput](func(s *jsonschema.Schema) {
+			if p := prop(s, "name"); p != nil {
+				p.MaxLength = intPtr(200)
+			}
+			if p := prop(s, "condition"); p != nil {
+				p.MaxLength = intPtr(10000)
+			}
+		}),
 		Annotations: writeAnn(false, false, false),
 	}, createTamperRuleHandler(client))
 }

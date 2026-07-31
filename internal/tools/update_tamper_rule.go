@@ -169,6 +169,9 @@ func RegisterUpdateTamperRuleTool(
 			if p := prop(s, "condition"); p != nil {
 				p.MaxLength = intPtr(10000)
 			}
+			if p := prop(s, "section"); p != nil {
+				p.Enum = tamperSectionEnum
+			}
 		}),
 		Annotations: writeAnn(false, true, false),
 	}, updateTamperRuleHandler(client))

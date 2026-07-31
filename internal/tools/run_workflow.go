@@ -7,6 +7,7 @@ import (
 
 	caido "github.com/caido-community/sdk-go"
 	gen "github.com/caido-community/sdk-go/graphql"
+	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -146,6 +147,11 @@ func RegisterRunWorkflowTool(
 			`input (for convert). Active workflows run on a ` +
 			`request and return a task_id. Convert workflows ` +
 			`transform input data and return the output.`,
+		InputSchema: schemaFor[RunWorkflowInput](func(s *jsonschema.Schema) {
+			if p := prop(s, "type"); p != nil {
+				p.Enum = []any{"active", "convert"}
+			}
+		}),
 		Annotations: writeAnn(false, false, true),
 	}, runWorkflowHandler(client))
 }

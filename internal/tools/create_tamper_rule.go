@@ -152,6 +152,24 @@ func createTamperRuleHandler(
 	}
 }
 
+// tamperSectionEnum is the set of section values buildTamperSectionMap
+// accepts; advertised as the JSON Schema enum for create/update section.
+var tamperSectionEnum = []any{
+	"requestAll",
+	"requestHeader",
+	"requestBody",
+	"requestPath",
+	"requestQuery",
+	"requestMethod",
+	"requestFirstLine",
+	"requestSNI",
+	"responseAll",
+	"responseHeader",
+	"responseBody",
+	"responseFirstLine",
+	"responseStatusCode",
+}
+
 // buildTamperSectionMap constructs the section input as a map.
 // Every nested type in the tamper section chain is a GraphQL oneof
 // (section, operation, matcher, replacer). Using maps ensures only
@@ -244,6 +262,9 @@ func RegisterCreateTamperRuleTool(
 			}
 			if p := prop(s, "condition"); p != nil {
 				p.MaxLength = intPtr(10000)
+			}
+			if p := prop(s, "section"); p != nil {
+				p.Enum = tamperSectionEnum
 			}
 		}),
 		Annotations: writeAnn(false, false, false),

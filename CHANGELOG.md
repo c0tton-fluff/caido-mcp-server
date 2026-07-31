@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [4.3.0] - 2026-07-31
+
 ### Added
 - **MCP 2026-07-28 protocol conformance test.** `TestProtocolVersionNegotiation` asserts the server negotiates protocol version `2026-07-28` (the go-sdk v1.7.0 default; the server pins no version), guarding against a future SDK downgrade or an accidental version pin. No behavior change.
 - **Human-friendly `title` on all 66 MCP tools.** The `2026-07-28` spec first-classes a display `title` distinct from the machine `name`; clients that render titles now show readable labels (e.g. `Send HTTP Request`, `List WebSocket Streams`). A `schema_test` guard enforces a non-empty title on every tool. Additive, no behavior change.

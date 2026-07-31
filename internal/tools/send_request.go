@@ -292,7 +292,7 @@ func RegisterSendRequestTool(
 ) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "caido_send_request",
-		Description: `Send HTTP request and return response inline. Returns statusCode, headers, body, and a response fingerprint (title, redirect target, cookie names, word count, and notableHeaders -- non-standard response headers such as Server, X-Powered-By, or custom X-* headers where app/flag signal often hides; ALWAYS check these on every response, including 4xx/5xx). Polls up to 10s for response. On timeout, returns entryId for follow-up via get_replay_entry. Session cookies (Set-Cookie) auto-persist between calls sharing the same sessionId; pass useCookieJar:false to disable for a single call. Set includeBody:false to omit body text (fingerprint stays populated); pass marker to check for reflection in the response body.`,
+		Description: `Send an HTTP request; returns statusCode, headers, body, and a response fingerprint (title, redirect, cookie names, word count, notableHeaders). Polls up to 10s; on timeout returns entryId for get_replay_entry. Session cookies auto-persist across calls with the same sessionId (useCookieJar:false to disable). includeBody:false omits body text; marker checks response body for reflection. See README "Response fingerprinting" for field details.`,
 		Annotations: writeAnn(false, false, true),
 	}, sendRequestHandler(client))
 }

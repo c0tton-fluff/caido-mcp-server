@@ -44,13 +44,16 @@ mutation UpdateTamperRule($id: ID!, $input: UpdateTamperRuleInput!) {
 
 // UpdateTamperRuleInput is the input for the update_tamper_rule tool.
 type UpdateTamperRuleInput struct {
-	ID        string   `json:"id" jsonschema:"required,Tamper rule ID to update"`
-	Name      string   `json:"name" jsonschema:"required,Updated rule name"`
-	Section   string   `json:"section" jsonschema:"required,Section to match: requestAll requestHeader requestBody requestPath requestQuery requestMethod requestFirstLine requestSNI responseAll responseHeader responseBody responseFirstLine responseStatusCode"`
-	Match     string   `json:"match,omitempty" jsonschema:"Regex pattern to match"`
-	Replace   string   `json:"replace,omitempty" jsonschema:"Replacement string"`
-	Condition *string  `json:"condition,omitempty" jsonschema:"HTTPQL filter condition"`
-	Sources   []string `json:"sources,omitempty" jsonschema:"Traffic sources: INTERCEPT REPLAY AUTOMATE IMPORT PLUGIN WORKFLOW SAMPLE"`
+	ID      string `json:"id" jsonschema:"required,Tamper rule ID to update"`
+	Name    string `json:"name" jsonschema:"required,Updated rule name"`
+	Section string `json:"section" jsonschema:"required,Section to match: requestAll requestHeader requestBody requestPath requestQuery requestMethod requestFirstLine requestSNI responseAll responseHeader responseBody responseFirstLine responseStatusCode"`
+	// Operation selects the mode. When omitted the section's default mode
+	// is used with the legacy Match/Replace fields below.
+	Operation *TamperOperation `json:"operation,omitempty" jsonschema:"Operation mode and its parameters. Omit to use updateRaw with match/replace."`
+	Match     string           `json:"match,omitempty" jsonschema:"Regex pattern to match. Legacy shorthand for operation.match."`
+	Replace   string           `json:"replace,omitempty" jsonschema:"Replacement string. Legacy shorthand for operation.value."`
+	Condition *string          `json:"condition,omitempty" jsonschema:"HTTPQL filter condition"`
+	Sources   []string         `json:"sources,omitempty" jsonschema:"Traffic sources: INTERCEPT REPLAY AUTOMATE IMPORT PLUGIN WORKFLOW SAMPLE"`
 }
 
 // UpdateTamperRuleOutput is the output of the update_tamper_rule tool.
@@ -85,8 +88,11 @@ func updateTamperRuleHandler(
 			)
 		}
 
-		section, err := buildTamperSectionMap(
-			input.Section, input.Match, input.Replace,
+		section, err := buildTamperSection(
+			input.Section,
+			resolveTamperOperation(
+				input.Operation, input.Match, input.Replace,
+			),
 		)
 		if err != nil {
 			return nil, UpdateTamperRuleOutput{}, err
@@ -155,10 +161,11 @@ func RegisterUpdateTamperRuleTool(
 		Name: "caido_update_tamper_rule",
 		Description: `Update an existing Match & Replace ` +
 			`(tamper) rule. Params: id (required), ` +
-			`name (required), section (required: requestAll/` +
-			`requestHeader/requestBody/responseAll/responseHeader/` +
-			`responseBody/etc), match (regex), replace (string), ` +
-			`condition (HTTPQL filter), sources (traffic sources). ` +
+			`name (required), section (required), ` +
+			`operation (mode + params), condition (HTTPQL filter), ` +
+			`sources (traffic sources). ` +
+			tamperSectionDoc() + `. ` +
+			`Legacy match/replace still work and mean updateRaw. ` +
 			`This is a full update; pass the complete rule state.`,
 		Annotations: writeAnn(false, true, false),
 	}, updateTamperRuleHandler(client))

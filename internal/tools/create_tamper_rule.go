@@ -20,6 +20,9 @@ import (
 // limitation: keep the workaround until a release fixes omitempty on
 // nullable pointer fields in GraphQL oneofs (no such release exists yet;
 // v0.8.1 is current, no v0.9.x). Tracked in .claude/TODO.md.
+//
+// The section value itself is built by buildTamperSection in
+// tamper_section.go, which owns the section/operation shape table.
 type createTamperRuleVars struct {
 	Input createTamperRuleGQLInput `json:"input"`
 }
@@ -54,13 +57,16 @@ mutation CreateTamperRule($input: CreateTamperRuleInput!) {
 
 // CreateTamperRuleInput is the input for the create_tamper_rule tool
 type CreateTamperRuleInput struct {
-	CollectionID string   `json:"collection_id" jsonschema:"required,ID of the tamper rule collection"`
-	Name         string   `json:"name" jsonschema:"required,Name for the new rule"`
-	Section      string   `json:"section" jsonschema:"required,Section to match: requestAll requestHeader requestBody requestPath requestQuery requestMethod requestFirstLine requestSNI responseAll responseHeader responseBody responseFirstLine responseStatusCode"`
-	Match        string   `json:"match,omitempty" jsonschema:"Regex pattern to match"`
-	Replace      string   `json:"replace,omitempty" jsonschema:"Replacement string"`
-	Condition    *string  `json:"condition,omitempty" jsonschema:"HTTPQL filter condition"`
-	Sources      []string `json:"sources,omitempty" jsonschema:"Traffic sources: INTERCEPT REPLAY AUTOMATE IMPORT PLUGIN WORKFLOW SAMPLE"`
+	CollectionID string `json:"collection_id" jsonschema:"required,ID of the tamper rule collection"`
+	Name         string `json:"name" jsonschema:"required,Name for the new rule"`
+	Section      string `json:"section" jsonschema:"required,Section to match: requestAll requestHeader requestBody requestPath requestQuery requestMethod requestFirstLine requestSNI responseAll responseHeader responseBody responseFirstLine responseStatusCode"`
+	// Operation selects the mode. When omitted the section's default mode
+	// is used with the legacy Match/Replace fields below.
+	Operation *TamperOperation `json:"operation,omitempty" jsonschema:"Operation mode and its parameters. Omit to use updateRaw with match/replace."`
+	Match     string           `json:"match,omitempty" jsonschema:"Regex pattern to match. Legacy shorthand for operation.match."`
+	Replace   string           `json:"replace,omitempty" jsonschema:"Replacement string. Legacy shorthand for operation.value."`
+	Condition *string          `json:"condition,omitempty" jsonschema:"HTTPQL filter condition"`
+	Sources   []string         `json:"sources,omitempty" jsonschema:"Traffic sources: INTERCEPT REPLAY AUTOMATE IMPORT PLUGIN WORKFLOW SAMPLE"`
 }
 
 // CreateTamperRuleOutput is the output of the create_tamper_rule tool
@@ -89,8 +95,11 @@ func createTamperRuleHandler(
 			)
 		}
 
-		section, err := buildTamperSectionMap(
-			input.Section, input.Match, input.Replace,
+		section, err := buildTamperSection(
+			input.Section,
+			resolveTamperOperation(
+				input.Operation, input.Match, input.Replace,
+			),
 		)
 		if err != nil {
 			return nil, CreateTamperRuleOutput{}, err
@@ -151,79 +160,6 @@ func createTamperRuleHandler(
 	}
 }
 
-// buildTamperSectionMap constructs the section input as a map.
-// Every nested type in the tamper section chain is a GraphQL oneof
-// (section, operation, matcher, replacer). Using maps ensures only
-// the chosen variant is serialized -- no null fields for unset
-// variants at any nesting level.
-func buildTamperSectionMap(
-	section, match, replace string,
-) (map[string]any, error) {
-	matcher := map[string]any{
-		"regex": map[string]any{"regex": match},
-	}
-	replacer := map[string]any{
-		"term": map[string]any{"term": replace},
-	}
-	rawOp := map[string]any{
-		"raw": map[string]any{
-			"matcher":  matcher,
-			"replacer": replacer,
-		},
-	}
-
-	wrap := func(key string, op map[string]any) map[string]any {
-		return map[string]any{
-			key: map[string]any{"operation": op},
-		}
-	}
-
-	switch section {
-	case "requestAll":
-		return wrap("requestAll", rawOp), nil
-	case "requestHeader":
-		return wrap("requestHeader", rawOp), nil
-	case "requestBody":
-		return wrap("requestBody", rawOp), nil
-	case "requestPath":
-		return wrap("requestPath", rawOp), nil
-	case "requestQuery":
-		return wrap("requestQuery", rawOp), nil
-	case "requestMethod":
-		return wrap("requestMethod", map[string]any{
-			"update": map[string]any{
-				"matcher":  matcher,
-				"replacer": replacer,
-			},
-		}), nil
-	case "requestFirstLine":
-		return wrap("requestFirstLine", rawOp), nil
-	case "requestSNI":
-		return wrap("requestSNI", rawOp), nil
-	case "responseAll":
-		return wrap("responseAll", rawOp), nil
-	case "responseHeader":
-		return wrap("responseHeader", rawOp), nil
-	case "responseBody":
-		return wrap("responseBody", rawOp), nil
-	case "responseFirstLine":
-		return wrap("responseFirstLine", rawOp), nil
-	case "responseStatusCode":
-		return wrap("responseStatusCode", map[string]any{
-			"update": map[string]any{
-				"matcher":  matcher,
-				"replacer": replacer,
-			},
-		}), nil
-	default:
-		return nil, fmt.Errorf(
-			"unknown section %q: use requestAll, requestHeader, "+
-				"requestBody, responseAll, responseHeader, responseBody, "+
-				"or other supported sections", section,
-		)
-	}
-}
-
 // RegisterCreateTamperRuleTool registers the tool
 func RegisterCreateTamperRuleTool(
 	server *mcp.Server, client *caido.Client,
@@ -232,10 +168,12 @@ func RegisterCreateTamperRuleTool(
 		Name: "caido_create_tamper_rule",
 		Description: `Create a Match & Replace (tamper) rule. ` +
 			`Params: collection_id (required), name (required), ` +
-			`section (required: requestAll/requestHeader/requestBody/` +
-			`responseAll/responseHeader/responseBody/etc), ` +
-			`match (regex), replace (string), ` +
-			`condition (HTTPQL filter), sources (traffic sources).`,
+			`section (required), operation (mode + params), ` +
+			`condition (HTTPQL filter), sources (traffic sources). ` +
+			`Prefer operation.kind=updateValue/add/remove with a header ` +
+			`or query param name over hand-written regex. ` +
+			tamperSectionDoc() + `. ` +
+			`Legacy match/replace still work and mean updateRaw.`,
 		Annotations: writeAnn(false, false, false),
 	}, createTamperRuleHandler(client))
 }

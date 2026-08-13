@@ -22,7 +22,7 @@
 
 Two ways to interact with your Caido proxy:
 
-- **MCP Server** - expose 66 tools and 6 read-only resources to AI assistants (Claude Code, Cursor, etc.) via the Model Context Protocol
+- **MCP Server** - expose 67 tools and 6 read-only resources to AI assistants (Claude Code, Cursor, etc.) via the Model Context Protocol
 - **CLI** - standalone terminal client for pentesters who prefer the command line
 
 Both share the same auth token, the same Go SDK, and the same codebase.
@@ -39,7 +39,7 @@ Both share the same auth token, the same Go SDK, and the same codebase.
 | **Scopes** | Full lifecycle: create, rename, delete target scope definitions; check if a host/URL is in scope |
 | **Projects** | Full lifecycle: create, rename, select, delete projects |
 | **Workflows** | List, run, and toggle automation workflows |
-| **Tamper** | List, create, toggle, and delete Match & Replace rules |
+| **Tamper** | List, create, update, toggle, and delete Match & Replace rules in all four GUI modes (update raw, update value, add, remove); dry-run a rule against a raw request before committing it |
 | **Intercept** | Check status, pause/resume, list/forward/drop intercepted requests |
 | **Environments** | Create, select, delete variable environments (tokens, keys) |
 | **Filters** | Create, list, and delete saved HTTPQL filter presets |
@@ -228,6 +228,7 @@ This opens your browser for OAuth authentication and saves the token to `~/.caid
 | `caido_list_tamper_rules` | List Match & Replace rule collections |
 | `caido_create_tamper_rule` | Create a tamper rule in a collection |
 | `caido_update_tamper_rule` | Update an existing tamper rule |
+| `caido_test_tamper_rule` | Dry-run a tamper rule against a raw request |
 | `caido_toggle_tamper_rule` | Enable or disable a tamper rule |
 | `caido_delete_tamper_rule` | Delete a tamper rule |
 | `caido_get_instance` | Get Caido version and platform info |
@@ -415,7 +416,8 @@ No parameters required. Returns all environments with variables and selected/glo
 
 #### caido_list_tamper_rules
 
-No parameters required. Returns all tamper rule collections with nested rules.
+No parameters required. Returns all tamper rule collections with nested rules
+(`id`, `name`, `section`, `enabled`, `condition`, `sources`).
 
 #### caido_create_tamper_rule
 
@@ -423,8 +425,54 @@ No parameters required. Returns all tamper rule collections with nested rules.
 |-----------|------|-------------|
 | `collection_id` | string | Collection ID (required) |
 | `name` | string | Rule name (required) |
+| `section` | string | Section to match (required), see below |
+| `operation` | object | Operation mode and parameters, see below |
+| `match` | string | Legacy shorthand for `operation.match` |
+| `replace` | string | Legacy shorthand for `operation.value` |
 | `condition` | string | HTTPQL filter condition |
 | `sources` | string[] | Traffic sources: INTERCEPT, REPLAY, AUTOMATE, IMPORT, PLUGIN, WORKFLOW, SAMPLE |
+
+##### Operation modes
+
+| `operation.kind` | Meaning | Fields |
+|---|---|---|
+| `updateRaw` | Pattern match over the raw section text | `match`, `match_kind`, `value` |
+| `updateValue` | Set the value of a named header or query param | `name`, `value` |
+| `add` | Insert a new header or query param | `name`, `value` |
+| `remove` | Delete a named header or query param | `name` |
+
+`match_kind` selects how `match` is read: `regex` (default), `value` (literal
+substring, no escaping) or `full` (the entire section, `match` must be omitted).
+Use `workflow_id` instead of `value` to supply the replacement from a convert
+workflow.
+
+All four modes are available on `requestHeader`, `responseHeader` and
+`requestQuery`. Every other section supports exactly one mode, and asking for
+another returns an error naming the modes it does support:
+`requestAll`, `requestBody`, `requestFirstLine`, `requestPath`, `responseAll`,
+`responseBody`, `responseFirstLine` take `updateRaw`; `requestMethod`,
+`requestSNI`, `responseStatusCode` take `updateValue` (they always apply, so
+they accept no `match` or `name`).
+
+Omitting `operation` entirely falls back to the section's default mode with the
+legacy `match`/`replace` fields, so existing callers keep working unchanged.
+
+#### caido_test_tamper_rule
+
+Dry-run a rule against a raw HTTP request or response and return the transformed
+result. Nothing is persisted and no traffic is sent. Accepts the same `section`,
+`operation` and legacy `match`/`replace` parameters as
+`caido_create_tamper_rule`.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `raw` | string | Raw HTTP request or response to transform (required) |
+| `section` | string | Section to match (required) |
+| `operation` | object | Operation mode and parameters |
+
+Returns `raw` (the transformed message) and `changed` (whether the rule matched
+anything at all), which is the quickest way to catch a rule that silently
+matches nothing.
 
 #### caido_toggle_tamper_rule
 

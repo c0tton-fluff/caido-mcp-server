@@ -11,6 +11,7 @@ type MockHandler struct {
 	mu            sync.Mutex
 	responses     map[string][]json.RawMessage
 	lastVariables map[string]map[string]any
+	validate      bool
 }
 
 func NewMockHandler() *MockHandler {
@@ -18,6 +19,17 @@ func NewMockHandler() *MockHandler {
 		responses:     make(map[string][]json.RawMessage),
 		lastVariables: make(map[string]map[string]any),
 	}
+}
+
+// ValidateAgainstSchema makes the mock check every incoming query and its
+// variables against the pinned sdk-go GraphQL schema, returning a GraphQL
+// error response when they do not conform. Opt in from any test whose
+// subject builds GraphQL input by hand -- without it the mock accepts
+// input the real server rejects. See schema_validate.go.
+func (m *MockHandler) ValidateAgainstSchema() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.validate = true
 }
 
 func (m *MockHandler) On(operationName string, response any) {
@@ -36,11 +48,29 @@ func (m *MockHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	var req struct {
 		OperationName string         `json:"operationName"`
+		Query         string         `json:"query"`
 		Variables     map[string]any `json:"variables"`
 	}
 	if err := json.Unmarshal(body, &req); err != nil {
 		http.Error(w, "invalid json", http.StatusBadRequest)
 		return
+	}
+
+	m.mu.Lock()
+	validate := m.validate
+	m.mu.Unlock()
+
+	if validate {
+		if err := validateOperation(req.Query, req.Variables); err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"errors": []map[string]string{
+					{"message": "schema validation: " + err.Error()},
+				},
+			})
+			return
+		}
 	}
 
 	m.mu.Lock()

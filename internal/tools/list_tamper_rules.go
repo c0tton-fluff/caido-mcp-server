@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"strings"
 
 	caido "github.com/caido-community/sdk-go"
 	gen "github.com/caido-community/sdk-go/graphql"
@@ -13,8 +14,16 @@ type ListTamperRulesInput struct{}
 
 // TamperRuleSummary is a summary of a tamper rule
 type TamperRuleSummary struct {
-	ID        string   `json:"id"`
-	Name      string   `json:"name"`
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	// Section is the part of the request or response the rule acts on,
+	// using the same names the create/update/test tools accept.
+	//
+	// The operation body (mode, matcher, replacer) is deliberately not
+	// surfaced: reaching it through the generated union types costs ~30
+	// type assertions, and caido_test_tamper_rule answers "what does this
+	// rule actually do" with ground truth instead of a static summary.
+	Section   string   `json:"section,omitempty"`
 	Enabled   bool     `json:"enabled"`
 	Condition *string  `json:"condition,omitempty"`
 	Sources   []string `json:"sources"`
@@ -73,6 +82,7 @@ func listTamperRulesHandler(
 				col.Rules = append(col.Rules, TamperRuleSummary{
 					ID:        r.Id,
 					Name:      r.Name,
+					Section:   tamperSectionFromTypename(r.Section),
 					Enabled:   enabled,
 					Condition: tamperRuleConditionToString(r.Condition),
 					Sources:   sources,
@@ -86,6 +96,33 @@ func listTamperRulesHandler(
 
 		return nil, output, nil
 	}
+}
+
+// tamperSectionFromTypename converts a GraphQL section __typename such as
+// "TamperSectionRequestHeader" into the tool-facing section name
+// "requestHeader", so a listed rule can be fed straight back into the
+// create/update/test tools. Returns "" for a nil section or a typename
+// that is not in the section table, which keeps an sdk-go schema bump
+// from breaking the listing.
+func tamperSectionFromTypename(
+	section gen.ListTamperRuleCollectionsTamperRuleCollectionsTamperRuleCollectionRulesTamperRuleSectionTamperSection,
+) string {
+	if section == nil {
+		return ""
+	}
+	typename := section.GetTypename()
+	if typename == nil {
+		return ""
+	}
+	name := strings.TrimPrefix(*typename, "TamperSection")
+	if name == "" || name == *typename {
+		return ""
+	}
+	candidate := strings.ToLower(name[:1]) + name[1:]
+	if _, ok := tamperSections[candidate]; !ok {
+		return ""
+	}
+	return candidate
 }
 
 func tamperRuleConditionToString(
@@ -115,7 +152,9 @@ func RegisterListTamperRulesTool(
 		Description: `List Match & Replace (tamper) rule ` +
 			`collections and their rules. Returns ` +
 			`collection id/name with nested rules ` +
-			`(id/name/enabled/condition/sources).`,
+			`(id/name/section/enabled/condition/sources). ` +
+			`Use caido_test_tamper_rule to see what a rule does to a ` +
+			`given request.`,
 		Annotations: readOnlyAnn(),
 	}, listTamperRulesHandler(client))
 }

@@ -14,6 +14,10 @@ import (
 // TestGetAutomateSessionRedactsSecrets proves the fuzzing session's request
 // template never leaks Authorization/Cookie values to the LLM.
 func TestGetAutomateSessionRedactsSecrets(t *testing.T) {
+	// Redaction is only ON when CAIDO_ALLOW_SENSITIVE_HEADERS is falsy.
+	// Pin it so this does not depend on the ambient environment.
+	t.Setenv("CAIDO_ALLOW_SENSITIVE_HEADERS", "")
+
 	rawTemplate := base64.StdEncoding.EncodeToString([]byte(
 		"POST /login HTTP/1.1\r\n" +
 			"Host: example.com\r\n" +

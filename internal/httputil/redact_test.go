@@ -9,7 +9,7 @@ func TestRedactRawHeaders(t *testing.T) {
 	tests := []struct {
 		name        string
 		raw         string
-		allow       string // CAIDO_ALLOW_SENSITIVE_HEADERS value; "" leaves it unset
+		allow       string // CAIDO_ALLOW_SENSITIVE_HEADERS value; "" means redact
 		wantContain []string
 		wantAbsent  []string
 	}{
@@ -104,9 +104,13 @@ func TestRedactRawHeaders(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if tt.allow != "" {
-				t.Setenv("CAIDO_ALLOW_SENSITIVE_HEADERS", tt.allow)
-			}
+			// Always pin the variable, including to "". Skipping the
+			// call for the empty case left the test reading whatever the
+			// developer or CI had exported, so a shell with
+			// CAIDO_ALLOW_SENSITIVE_HEADERS=1 turned every
+			// redaction-expected case into a failure. "" is not parseable
+			// as a bool, which ParseRaw treats as fail-safe (redact).
+			t.Setenv("CAIDO_ALLOW_SENSITIVE_HEADERS", tt.allow)
 			got := RedactRawHeaders(tt.raw)
 			for _, want := range tt.wantContain {
 				if !strings.Contains(got, want) {

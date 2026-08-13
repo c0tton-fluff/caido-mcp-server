@@ -5,6 +5,8 @@ import (
 	"encoding/base64"
 	"fmt"
 
+	"github.com/google/jsonschema-go/jsonschema"
+
 	gql "github.com/Khan/genqlient/graphql"
 	caido "github.com/caido-community/sdk-go"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -141,7 +143,8 @@ func RegisterTestTamperRuleTool(
 	server *mcp.Server, client *caido.Client,
 ) {
 	mcp.AddTool(server, &mcp.Tool{
-		Name: "caido_test_tamper_rule",
+		Name:  "caido_test_tamper_rule",
+		Title: "Test Tamper Rule",
 		Description: `Dry-run a Match & Replace (tamper) rule against a ` +
 			`raw HTTP request or response and return the transformed ` +
 			`result. Nothing is persisted and no traffic is sent. ` +
@@ -149,6 +152,14 @@ func RegisterTestTamperRuleTool(
 			`"changed" field reports whether the rule matched at all. ` +
 			`Params: raw (required), section (required), ` +
 			`operation (mode + params) or legacy match/replace.`,
+		InputSchema: schemaFor[TestTamperRuleInput](func(s *jsonschema.Schema) {
+			if p := prop(s, "raw"); p != nil {
+				p.MaxLength = intPtr(maxRawRequestBytes)
+			}
+			if p := prop(s, "section"); p != nil {
+				p.Enum = tamperSectionEnum
+			}
+		}),
 		Annotations: readOnlyAnn(),
 	}, testTamperRuleHandler(client))
 }

@@ -149,6 +149,21 @@ func tamperSectionNames() []string {
 	return names
 }
 
+// tamperSectionEnum is the section list advertised as the JSON Schema enum
+// for the section parameter on the create/update/test tools.
+//
+// Derived from the table rather than hand-listed, so the values a client is
+// told it may send cannot drift from the values buildTamperSection actually
+// accepts. Adding a section to the table advertises it automatically.
+var tamperSectionEnum = func() []any {
+	names := tamperSectionNames()
+	out := make([]any, 0, len(names))
+	for _, name := range names {
+		out = append(out, name)
+	}
+	return out
+}()
+
 // tamperOpNames returns a section's supported operation kinds, sorted.
 func tamperOpNames(spec tamperSectionSpec) []string {
 	names := make([]string, 0, len(spec.ops))

@@ -6,6 +6,7 @@ import (
 
 	"github.com/c0tton-fluff/caido-mcp-server/v4/internal/httputil"
 	caido "github.com/caido-community/sdk-go"
+	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -99,7 +100,13 @@ func RegisterListRequestsTool(
 ) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "caido_list_requests",
+		Title:       "List Requests",
 		Description: `List HTTP requests. Filter with httpql (e.g. req.host.eq:"example.com"). Returns id/method/url/status.`,
+		InputSchema: schemaFor[ListRequestsInput](func(s *jsonschema.Schema) {
+			if p := prop(s, "httpql"); p != nil {
+				p.MaxLength = intPtr(10000)
+			}
+		}),
 		Annotations: readOnlyAnn(),
 	}, listRequestsHandler(client))
 }

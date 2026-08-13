@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	caido "github.com/caido-community/sdk-go"
+	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -63,7 +64,13 @@ func RegisterInterceptControlTool(
 ) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "caido_intercept_control",
+		Title:       "Control Intercept",
 		Description: `Pause or resume the intercept proxy. Pausing lets requests flow through unmodified.`,
+		InputSchema: schemaFor[InterceptControlInput](func(s *jsonschema.Schema) {
+			if p := prop(s, "action"); p != nil {
+				p.Enum = []any{"pause", "resume"}
+			}
+		}),
 		Annotations: writeAnn(false, false, false),
 	}, interceptControlHandler(client))
 }

@@ -64,7 +64,8 @@ func RegisterListWorkflowsTool(
 	server *mcp.Server, client *caido.Client,
 ) {
 	mcp.AddTool(server, &mcp.Tool{
-		Name: "caido_list_workflows",
+		Name:  "caido_list_workflows",
+		Title: "List Workflows",
 		Description: `List automation workflows. ` +
 			`Returns id/name/kind/enabled.`,
 		Annotations: readOnlyAnn(),

@@ -77,7 +77,8 @@ func RegisterCreateFilterTool(
 	server *mcp.Server, client *caido.Client,
 ) {
 	mcp.AddTool(server, &mcp.Tool{
-		Name: "caido_create_filter",
+		Name:  "caido_create_filter",
+		Title: "Create Filter",
 		Description: `Create a new HTTPQL filter preset. ` +
 			`Returns id/name/alias of the created filter.`,
 		Annotations: writeAnn(false, false, false),

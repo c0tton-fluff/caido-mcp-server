@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	caido "github.com/caido-community/sdk-go"
+	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -116,7 +117,13 @@ func RegisterAutomateTaskControlTool(
 ) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "caido_automate_task_control",
+		Title:       "Control Automate Task",
 		Description: `Control fuzzing tasks. Actions: start (needs session_id), pause/resume/cancel (needs task_id).`,
+		InputSchema: schemaFor[AutomateTaskControlInput](func(s *jsonschema.Schema) {
+			if p := prop(s, "action"); p != nil {
+				p.Enum = []any{"start", "pause", "resume", "cancel"}
+			}
+		}),
 		Annotations: writeAnn(false, false, false),
 	}, automateTaskControlHandler(client))
 }

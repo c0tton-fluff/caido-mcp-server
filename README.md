@@ -66,6 +66,18 @@ The `caido_send_request` tool maintains an in-memory `http.CookieJar` per replay
 
 The output of `caido_send_request` includes a `cookieJar` block with `injectedCookies` (names sent on this call) and `storedCookies` (names captured from `Set-Cookie`), so the LLM can verify the chain stayed authenticated.
 
+### Response fingerprinting
+
+Every `caido_send_request` / `caido_batch_send` response includes a compact fingerprint so an agent can reason about a response without the full body:
+
+- `title` - HTML `<title>`, if present
+- `redirect` - Location target on a 3xx
+- `cookieNames` - names set via `Set-Cookie` (values are never included)
+- `wordCount` - body word count, for size/diff comparison
+- `notableHeaders` - non-standard response headers (`Server`, `X-Powered-By`, custom `X-*`). App and flag signal often hides here - check these on every response, including 4xx/5xx.
+
+The fingerprint stays populated even when `includeBody: false`.
+
 ### Revealing sensitive headers
 
 By default, sensitive headers (`Authorization`, `Cookie`, `Set-Cookie`, `Proxy-Authorization`, `X-Api-Key`, `X-Auth-Token`, `X-CSRF-Token`, `X-XSRF-Token`) are replaced with `[REDACTED]` in tool output to avoid leaking credentials into the model context. On an authorized engagement where you need the real values — to analyze or replay a captured authenticated request, or to produce a working `caido_export_curl` PoC — set `CAIDO_ALLOW_SENSITIVE_HEADERS` to a truthy value (`1`, `true`):

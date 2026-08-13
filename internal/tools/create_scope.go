@@ -6,6 +6,7 @@ import (
 
 	caido "github.com/caido-community/sdk-go"
 	gen "github.com/caido-community/sdk-go/graphql"
+	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -90,11 +91,20 @@ func createScopeHandler(
 // RegisterCreateScopeTool registers the tool with the MCP server
 func RegisterCreateScopeTool(server *mcp.Server, client *caido.Client) {
 	mcp.AddTool(server, &mcp.Tool{
-		Name: "caido_create_scope",
+		Name:  "caido_create_scope",
+		Title: "Create Scope",
 		Description: `Create scope. Params: name, allowlist, denylist. ` +
 			`Values are hostnames, not URLs. ` +
 			`Examples: "example.com", "*.example.com". ` +
 			`Do NOT include scheme (https://) or paths.`,
+		InputSchema: schemaFor[CreateScopeInput](func(s *jsonschema.Schema) {
+			if p := prop(s, "name"); p != nil {
+				p.MaxLength = intPtr(200)
+			}
+			if p := prop(s, "allowlist"); p != nil {
+				p.MaxItems = intPtr(100)
+			}
+		}),
 		Annotations: writeAnn(false, false, false),
 	}, createScopeHandler(client))
 }

@@ -69,7 +69,8 @@ func RegisterToggleWorkflowTool(
 	server *mcp.Server, client *caido.Client,
 ) {
 	mcp.AddTool(server, &mcp.Tool{
-		Name: "caido_toggle_workflow",
+		Name:  "caido_toggle_workflow",
+		Title: "Toggle Workflow",
 		Description: `Enable or disable an automation workflow. ` +
 			`Params: id (required), enabled (true/false).`,
 		Annotations: writeAnn(false, false, false),

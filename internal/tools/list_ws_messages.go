@@ -115,7 +115,8 @@ func decodeWsBody(raw string, limit int) (string, bool) {
 // RegisterListWsMessagesTool registers the tool with the MCP server
 func RegisterListWsMessagesTool(server *mcp.Server, client *caido.Client) {
 	mcp.AddTool(server, &mcp.Tool{
-		Name: "caido_list_ws_messages",
+		Name:  "caido_list_ws_messages",
+		Title: "List WebSocket Messages",
 		Description: `List WebSocket frames for a stream (from caido_list_ws_streams). ` +
 			`Each frame has direction (CLIENT/SERVER), format (TEXT/BINARY), ` +
 			`length, and decoded body (truncated to body_limit). ` +

@@ -78,7 +78,8 @@ func RegisterListFiltersTool(
 	server *mcp.Server, client *caido.Client,
 ) {
 	mcp.AddTool(server, &mcp.Tool{
-		Name: "caido_list_filters",
+		Name:  "caido_list_filters",
+		Title: "List Filters",
 		Description: `List saved HTTPQL filter presets. ` +
 			`Returns id/name/alias/clause.`,
 		Annotations: readOnlyAnn(),

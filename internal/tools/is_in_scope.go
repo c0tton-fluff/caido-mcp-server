@@ -191,7 +191,8 @@ func isInScopeHandler(
 // RegisterIsInScopeTool registers the tool with the MCP server
 func RegisterIsInScopeTool(server *mcp.Server, client *caido.Client) {
 	mcp.AddTool(server, &mcp.Tool{
-		Name: "caido_is_in_scope",
+		Name:  "caido_is_in_scope",
+		Title: "Check In Scope",
 		Description: `Check whether a host or URL is in the project scope. ` +
 			`Accepts a bare host ("example.com") or a full URL ` +
 			`("https://example.com/path"); the port and path are ignored. ` +

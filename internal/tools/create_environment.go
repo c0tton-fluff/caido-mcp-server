@@ -6,6 +6,7 @@ import (
 
 	caido "github.com/caido-community/sdk-go"
 	gen "github.com/caido-community/sdk-go/graphql"
+	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -72,7 +73,13 @@ func createEnvironmentHandler(
 func RegisterCreateEnvironmentTool(server *mcp.Server, client *caido.Client) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "caido_create_environment",
+		Title:       "Create Environment",
 		Description: `Create a new environment. Environments store variables (tokens, keys, etc) that can be used in replay placeholders.`,
+		InputSchema: schemaFor[CreateEnvironmentInput](func(s *jsonschema.Schema) {
+			if p := prop(s, "name"); p != nil {
+				p.MaxLength = intPtr(200)
+			}
+		}),
 		Annotations: writeAnn(false, false, false),
 	}, createEnvironmentHandler(client))
 }

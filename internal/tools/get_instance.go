@@ -43,7 +43,8 @@ func RegisterGetInstanceTool(
 	server *mcp.Server, client *caido.Client,
 ) {
 	mcp.AddTool(server, &mcp.Tool{
-		Name: "caido_get_instance",
+		Name:  "caido_get_instance",
+		Title: "Get Instance Info",
 		Description: `Get Caido instance info. ` +
 			`Returns version and platform.`,
 		Annotations: readOnlyAnn(),

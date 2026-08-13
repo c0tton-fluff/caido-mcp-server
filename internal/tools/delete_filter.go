@@ -48,7 +48,8 @@ func RegisterDeleteFilterTool(
 	server *mcp.Server, client *caido.Client,
 ) {
 	mcp.AddTool(server, &mcp.Tool{
-		Name: "caido_delete_filter",
+		Name:  "caido_delete_filter",
+		Title: "Delete Filter",
 		Description: `Delete a filter preset by ID. ` +
 			`Returns success status.`,
 		Annotations: writeAnn(true, true, false),

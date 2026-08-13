@@ -6,6 +6,7 @@ import (
 
 	"github.com/c0tton-fluff/caido-mcp-server/v4/internal/httputil"
 	caido "github.com/caido-community/sdk-go"
+	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -67,7 +68,8 @@ func convertBodyHandler(
 // RegisterConvertBodyTool registers the tool with the MCP server.
 func RegisterConvertBodyTool(server *mcp.Server, client *caido.Client) {
 	mcp.AddTool(server, &mcp.Tool{
-		Name: "caido_convert_body",
+		Name:  "caido_convert_body",
+		Title: "Convert Body",
 		Description: `Convert a request/response body between formats. ` +
 			`Formats: json, form (x-www-form-urlencoded), xml, multipart ` +
 			`(form-data). Params: body, from, to. ` +
@@ -75,6 +77,11 @@ func RegisterConvertBodyTool(server *mcp.Server, client *caido.Client) {
 			`JSON<->form supports flat objects losslessly (nested uses ` +
 			`bracket notation a[b]=c). multipart handles flat string fields ` +
 			`only (no files).`,
+		InputSchema: schemaFor[ConvertBodyInput](func(s *jsonschema.Schema) {
+			if p := prop(s, "body"); p != nil {
+				p.MaxLength = intPtr(maxRawRequestBytes)
+			}
+		}),
 		Annotations: readOnlyAnn(),
 	}, convertBodyHandler(client))
 }

@@ -95,6 +95,7 @@ func RegisterGetReplayEntryTool(
 ) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "caido_get_replay_entry",
+		Title:       "Get Replay Entry",
 		Description: `Get replay entry with full request and response content. Use after send_request timeout to retrieve results.`,
 		Annotations: readOnlyAnn(),
 	}, getReplayEntryHandler(client))

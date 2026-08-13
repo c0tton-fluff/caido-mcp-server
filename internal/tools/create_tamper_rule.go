@@ -7,6 +7,7 @@ import (
 	gql "github.com/Khan/genqlient/graphql"
 	caido "github.com/caido-community/sdk-go"
 	gen "github.com/caido-community/sdk-go/graphql"
+	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -165,7 +166,8 @@ func RegisterCreateTamperRuleTool(
 	server *mcp.Server, client *caido.Client,
 ) {
 	mcp.AddTool(server, &mcp.Tool{
-		Name: "caido_create_tamper_rule",
+		Name:  "caido_create_tamper_rule",
+		Title: "Create Tamper Rule",
 		Description: `Create a Match & Replace (tamper) rule. ` +
 			`Params: collection_id (required), name (required), ` +
 			`section (required), operation (mode + params), ` +
@@ -174,6 +176,17 @@ func RegisterCreateTamperRuleTool(
 			`or query param name over hand-written regex. ` +
 			tamperSectionDoc() + `. ` +
 			`Legacy match/replace still work and mean updateRaw.`,
+		InputSchema: schemaFor[CreateTamperRuleInput](func(s *jsonschema.Schema) {
+			if p := prop(s, "name"); p != nil {
+				p.MaxLength = intPtr(200)
+			}
+			if p := prop(s, "condition"); p != nil {
+				p.MaxLength = intPtr(10000)
+			}
+			if p := prop(s, "section"); p != nil {
+				p.Enum = tamperSectionEnum
+			}
+		}),
 		Annotations: writeAnn(false, false, false),
 	}, createTamperRuleHandler(client))
 }

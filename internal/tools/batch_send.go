@@ -8,6 +8,7 @@ import (
 	"github.com/c0tton-fluff/caido-mcp-server/v4/internal/httputil"
 	"github.com/c0tton-fluff/caido-mcp-server/v4/internal/replay"
 	caido "github.com/caido-community/sdk-go"
+	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -183,7 +184,13 @@ func RegisterBatchSendTool(
 ) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "caido_batch_send",
-		Description: `Send multiple HTTP requests in parallel. Use for BAC token sweeps, parameter fuzzing, or endpoint sweeps. Max 50 per batch. Returns statusCode, headers, and a response fingerprint (title, redirect target, cookie names, word count) per request; body text is omitted by default to save tokens (set includeBody:true to include it). Pass marker to flag reflection per result. Set sessionId on each request to auto-inject session cookies and persist Set-Cookie across calls sharing the same ID.`,
+		Title:       "Batch Send Requests",
+		Description: `Send multiple HTTP requests in parallel (max 50). Use for BAC token sweeps, parameter fuzzing, or endpoint sweeps. Returns statusCode, headers, and a response fingerprint per request; body text omitted by default (includeBody:true to include). marker flags reflection per result. Set sessionId per request to auto-inject and persist session cookies. See README "Response fingerprinting" for field details.`,
+		InputSchema: schemaFor[BatchSendInput](func(s *jsonschema.Schema) {
+			if p := prop(s, "requests"); p != nil {
+				p.MaxItems = intPtr(50)
+			}
+		}),
 		Annotations: writeAnn(false, false, true),
 	}, batchSendHandler(client))
 }

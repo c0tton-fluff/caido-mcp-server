@@ -14,6 +14,7 @@ import (
 	"github.com/c0tton-fluff/caido-mcp-server/v4/internal/httputil"
 	"github.com/c0tton-fluff/caido-mcp-server/v4/internal/raceattack"
 	caido "github.com/caido-community/sdk-go"
+	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -131,7 +132,22 @@ func RegisterRaceWindowSendTool(
 ) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "caido_race_window_send",
+		Title:       "Race-Window Send",
 		Description: `Fire multiple raw HTTP/1.1 requests with a synchronized last-byte send (single-packet / race-window style) for race-condition testing. All connections are dialed and parked at a barrier; final bytes are written together after the barrier opens (best-effort simultaneity, not guaranteed sub-ms). WARNING: this BYPASSES the Caido proxy -- requests are sent via raw sockets from this process and do NOT appear in Caido history. Max 50 requests.`,
+		InputSchema: schemaFor[RaceWindowSendInput](func(s *jsonschema.Schema) {
+			if p := prop(s, "host"); p != nil {
+				p.MaxLength = intPtr(200)
+			}
+			if p := prop(s, "requests"); p != nil {
+				p.MinItems = intPtr(1)
+				p.MaxItems = intPtr(50)
+				if p.Items != nil {
+					if raw := prop(p.Items, "raw"); raw != nil {
+						raw.MaxLength = intPtr(maxRawRequestBytes)
+					}
+				}
+			}
+		}),
 		Annotations: writeAnn(false, false, true),
 	}, raceWindowSendHandler(client))
 }

@@ -7,6 +7,7 @@ import (
 
 	"github.com/c0tton-fluff/caido-mcp-server/v4/internal/httputil"
 	caido "github.com/caido-community/sdk-go"
+	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -111,7 +112,13 @@ func RegisterListInterceptEntriesTool(
 ) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "caido_list_intercept_entries",
+		Title:       "List Intercept Entries",
 		Description: `List queued intercept entries. Filter with httpql. Returns id/method/url/status. Use with forward/drop tools.`,
+		InputSchema: schemaFor[ListInterceptEntriesInput](func(s *jsonschema.Schema) {
+			if p := prop(s, "filter"); p != nil {
+				p.MaxLength = intPtr(10000)
+			}
+		}),
 		Annotations: readOnlyAnn(),
 	}, listInterceptEntriesHandler(client))
 }

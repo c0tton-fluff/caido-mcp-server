@@ -123,6 +123,12 @@ func TestParseRaw_DuplicateHeaders(t *testing.T) {
 }
 
 func TestParseRaw_SensitiveHeaderRedaction(t *testing.T) {
+	// This asserts redaction is ON, which depends on
+	// CAIDO_ALLOW_SENSITIVE_HEADERS being falsy. Pin it rather than
+	// inheriting the developer's or CI's environment: a shell exporting
+	// the opt-out turned this security test into a false failure.
+	t.Setenv("CAIDO_ALLOW_SENSITIVE_HEADERS", "")
+
 	raw := []byte(
 		"GET / HTTP/1.1\r\n" +
 			"Host: example.com\r\n" +

@@ -12,6 +12,10 @@ import (
 // TestReadRequestResourceRedactsSecrets proves the request resource never leaks
 // Authorization/Cookie (request) or Set-Cookie (response) values to the LLM.
 func TestReadRequestResourceRedactsSecrets(t *testing.T) {
+	// Redaction is only ON when CAIDO_ALLOW_SENSITIVE_HEADERS is falsy.
+	// Pin it so this does not depend on the ambient environment.
+	t.Setenv("CAIDO_ALLOW_SENSITIVE_HEADERS", "")
+
 	env := newResourceTestEnv(t)
 
 	reqRaw := base64.StdEncoding.EncodeToString([]byte(

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
 	"strings"
 	"testing"
 
@@ -149,6 +150,104 @@ func TestTamperSectionsWithoutMatcher(t *testing.T) {
 	}
 }
 
+// TestTamperTableIsSchemaValid walks EVERY section and EVERY operation
+// mode the table declares and pushes each one through the create tool
+// against the schema-validating mock.
+//
+// The hand-picked cases elsewhere in this file prove specific shapes; this
+// proves there is no entry in the table that disagrees with the Caido
+// schema. It is the test that would catch a future section added with the
+// wrong matcher kind, a wrong gqlKey, or a replacer that should not be
+// there -- none of which the sampled tests would notice.
+//
+// tools.TamperSectionModes exposes the table for exactly this purpose.
+func TestTamperTableIsSchemaValid(t *testing.T) {
+	modes := tools.TamperSectionModes()
+	if len(modes) == 0 {
+		t.Fatal("section table is empty")
+	}
+
+	combos := 0
+	for _, section := range sortedKeys(modes) {
+		for _, kind := range modes[section] {
+			combos++
+			t.Run(section+"/"+kind, func(t *testing.T) {
+				env := newValidatingCreateEnv(t)
+
+				result := env.CallTool(
+					t, "caido_create_tamper_rule",
+					map[string]any{
+						"collection_id": "col-1",
+						"name":          "r",
+						"section":       section,
+						"operation": minimalOperation(
+							t, section, kind,
+						),
+					},
+				)
+				if result.IsError {
+					t.Fatalf(
+						"section %q mode %q rejected: %s",
+						section, kind, contentText(result),
+					)
+				}
+
+				// The call reaching the mock at all means it passed schema
+				// validation. Also confirm exactly one oneof variant was
+				// sent at the operation level.
+				operationVars(
+					t, sectionVars(t, env),
+					tools.TamperSectionGQLKey(section),
+				)
+			})
+		}
+	}
+
+	// Guard against the table silently shrinking: 7 raw-only sections,
+	// 3 named-field sections x 4 modes, 3 value-only sections.
+	if want := 7 + 12 + 3; combos != want {
+		t.Fatalf(
+			"table covers %d section/mode combinations, want %d",
+			combos, want,
+		)
+	}
+}
+
+// minimalOperation builds the smallest valid operation payload for a
+// section/mode pair, deriving the required fields from what the mode
+// accepts rather than from a hardcoded list.
+func minimalOperation(
+	t *testing.T, section, kind string,
+) map[string]any {
+	t.Helper()
+	op := map[string]any{"kind": kind}
+
+	switch tools.TamperMatcherKindFor(section, kind) {
+	case "raw":
+		op["match"] = "x"
+	case "name":
+		op["name"] = "X-Test"
+	case "none":
+		// Applies unconditionally; no matcher fields.
+	default:
+		t.Fatalf("unknown matcher kind for %s/%s", section, kind)
+	}
+
+	if tools.TamperHasReplacer(section, kind) {
+		op["value"] = "v"
+	}
+	return op
+}
+
+func sortedKeys(m map[string][]string) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
+
 // TestTamperHeaderOperationModes covers the four modes on a named-field
 // section, asserting the exact matcher/replacer shape each one emits.
 func TestTamperHeaderOperationModes(t *testing.T) {
@@ -249,6 +348,169 @@ func TestTamperHeaderOperationModes(t *testing.T) {
 			}
 			assertJSONEqual(t, "matcher", body["matcher"], tt.wantMatcher)
 			assertJSONEqual(t, "replacer", body["replacer"], tt.wantReplacer)
+		})
+	}
+}
+
+// TestTamperUpdateToolOperationModes proves the update tool's own wiring,
+// not just the shared builder. It calls resolveTamperOperation separately
+// from create, so a create-only test would leave this path unproven.
+func TestTamperUpdateToolOperationModes(t *testing.T) {
+	okData := map[string]any{
+		"updateTamperRule": map[string]any{
+			"error": nil,
+			"rule":  map[string]any{"id": "rule-1", "name": "r"},
+		},
+	}
+
+	tests := []struct {
+		name      string
+		args      map[string]any
+		wantOp    string
+		wantNoKey string
+	}{
+		{
+			name: "updateValue via operation",
+			args: map[string]any{
+				"section": "responseHeader",
+				"operation": map[string]any{
+					"kind": "updateValue", "name": "X-Frame-Options",
+					"value": "DENY",
+				},
+			},
+			wantOp: "update",
+		},
+		{
+			name: "remove via operation sends no replacer",
+			args: map[string]any{
+				"section": "requestHeader",
+				"operation": map[string]any{
+					"kind": "remove", "name": "Cookie",
+				},
+			},
+			wantOp:    "remove",
+			wantNoKey: "replacer",
+		},
+		{
+			name: "matcherless section via operation",
+			args: map[string]any{
+				"section": "responseStatusCode",
+				"operation": map[string]any{
+					"kind": "updateValue", "value": "404",
+				},
+			},
+			wantOp:    "update",
+			wantNoKey: "matcher",
+		},
+		{
+			name: "legacy match/replace still works",
+			args: map[string]any{
+				"section": "requestHeader",
+				"match":   "X-Foo", "replace": "X-Bar",
+			},
+			wantOp: "raw",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			env := testutil.NewMCPTestEnv(t, func(s *mcp.Server, c *caido.Client) {
+				tools.RegisterUpdateTamperRuleTool(s, c)
+			})
+			env.Mock.ValidateAgainstSchema()
+			env.Mock.On("UpdateTamperRule", okData)
+
+			args := map[string]any{"id": "rule-1", "name": "r"}
+			for k, v := range tt.args {
+				args[k] = v
+			}
+
+			result := env.CallTool(t, "caido_update_tamper_rule", args)
+			if result.IsError {
+				t.Fatalf("unexpected error: %s", contentText(result))
+			}
+
+			vars := env.Mock.LastVariables("UpdateTamperRule")
+			if vars == nil {
+				t.Fatal("UpdateTamperRule was never called")
+			}
+			input, _ := vars["input"].(map[string]any)
+			section, ok := input["section"].(map[string]any)
+			if !ok {
+				t.Fatalf("section missing from update input: %#v", input)
+			}
+			sectionKey := tools.TamperSectionGQLKey(
+				tt.args["section"].(string),
+			)
+			opKey, body := operationVars(t, section, sectionKey)
+			if opKey != tt.wantOp {
+				t.Fatalf("operation key = %q, want %q", opKey, tt.wantOp)
+			}
+			if tt.wantNoKey != "" {
+				if _, bad := body[tt.wantNoKey]; bad {
+					t.Fatalf(
+						"%s must not be sent for %s; body = %v",
+						tt.wantNoKey, tt.name, keysOf(body),
+					)
+				}
+			}
+		})
+	}
+}
+
+// TestTamperSectionFromTypename covers the __typename mapping used by the
+// listing.
+//
+// Only two outcomes are reachable in production. A __typename outside the
+// TamperSection union cannot get here at all: genqlient's generated
+// unmarshaller rejects the whole response first (confirmed by feeding it
+// "SomethingElse", which fails with "unexpected concrete type"). So the
+// cases that matter are a section the tools expose and a valid union
+// member they do not.
+func TestTamperSectionFromTypename(t *testing.T) {
+	// Drive it through the listing tool so the mapping is exercised the
+	// way production calls it.
+	tests := []struct {
+		name     string
+		typename any
+		want     string
+	}{
+		{"exposed section", "TamperSectionRequestHeader", "requestHeader"},
+		{"exposed response section", "TamperSectionResponseStatusCode", "responseStatusCode"},
+		{"valid union member the tools do not expose", "TamperSectionStreamWsMessageDownstream", ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			env := testutil.NewMCPTestEnv(t, func(s *mcp.Server, c *caido.Client) {
+				tools.RegisterListTamperRulesTool(s, c)
+			})
+			env.Mock.On("ListTamperRuleCollections", map[string]any{
+				"tamperRuleCollections": []map[string]any{{
+					"id": "col-1", "name": "c",
+					"rules": []map[string]any{{
+						"id": "rule-1", "name": "r",
+						"sources": []string{},
+						"section": map[string]any{
+							"__typename": tt.typename,
+						},
+					}},
+				}},
+			})
+
+			result := env.CallTool(
+				t, "caido_list_tamper_rules", map[string]any{},
+			)
+			if result.IsError {
+				t.Fatalf("unexpected error: %s", contentText(result))
+			}
+			out := testutil.UnmarshalToolResult[tools.ListTamperRulesOutput](
+				t, result,
+			)
+			got := out.Collections[0].Rules[0].Section
+			if got != tt.want {
+				t.Fatalf("section = %q, want %q", got, tt.want)
+			}
 		})
 	}
 }

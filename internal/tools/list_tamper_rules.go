@@ -101,9 +101,13 @@ func listTamperRulesHandler(
 // tamperSectionFromTypename converts a GraphQL section __typename such as
 // "TamperSectionRequestHeader" into the tool-facing section name
 // "requestHeader", so a listed rule can be fed straight back into the
-// create/update/test tools. Returns "" for a nil section or a typename
-// that is not in the section table, which keeps an sdk-go schema bump
-// from breaking the listing.
+// create/update/test tools.
+//
+// Returns "" when the rule has no section, or when the section is a valid
+// union member the tools do not expose (the two streamWsMessage sections).
+// A __typename outside the union never reaches here: genqlient's generated
+// unmarshaller fails the whole response first, so the only cases to handle
+// are a nil section and a known-but-unexposed one.
 func tamperSectionFromTypename(
 	section gen.ListTamperRuleCollectionsTamperRuleCollectionsTamperRuleCollectionRulesTamperRuleSectionTamperSection,
 ) string {
@@ -115,7 +119,7 @@ func tamperSectionFromTypename(
 		return ""
 	}
 	name := strings.TrimPrefix(*typename, "TamperSection")
-	if name == "" || name == *typename {
+	if name == "" {
 		return ""
 	}
 	candidate := strings.ToLower(name[:1]) + name[1:]

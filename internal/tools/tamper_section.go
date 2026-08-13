@@ -356,6 +356,58 @@ func resolveTamperOperation(
 	return TamperOperation{Match: match, Value: replace}
 }
 
+// TamperSectionModes returns every section mapped to the operation modes
+// it supports. Exported so tests can walk the whole table and assert each
+// section/mode pair against the real GraphQL schema, rather than sampling
+// a few entries by hand.
+func TamperSectionModes() map[string][]string {
+	out := make(map[string][]string, len(tamperSections))
+	for name, spec := range tamperSections {
+		out[name] = tamperOpNames(spec)
+	}
+	return out
+}
+
+// TamperSectionGQLKey returns a section's GraphQL field name, or "" when
+// the section is unknown. Exported for the table-walking test.
+func TamperSectionGQLKey(section string) string {
+	return tamperSections[section].gqlKey
+}
+
+// TamperMatcherKindFor reports which matcher a section/mode pair takes as
+// one of "raw", "name" or "none", or "" when the pair is unknown.
+// Exported for the table-walking test.
+func TamperMatcherKindFor(section, kind string) string {
+	spec, ok := tamperSections[section]
+	if !ok {
+		return ""
+	}
+	op, ok := spec.ops[kind]
+	if !ok {
+		return ""
+	}
+	switch op.matcher {
+	case matcherRaw:
+		return "raw"
+	case matcherName:
+		return "name"
+	case matcherNone:
+		return "none"
+	default:
+		return ""
+	}
+}
+
+// TamperHasReplacer reports whether a section/mode pair takes a replacer.
+// Exported for the table-walking test.
+func TamperHasReplacer(section, kind string) bool {
+	spec, ok := tamperSections[section]
+	if !ok {
+		return false
+	}
+	return spec.ops[kind].replacer
+}
+
 // tamperSectionDoc renders the section list for tool descriptions,
 // annotating the sections that accept more than one operation mode.
 func tamperSectionDoc() string {

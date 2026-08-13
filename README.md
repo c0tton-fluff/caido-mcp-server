@@ -457,6 +457,23 @@ they accept no `match` or `name`).
 Omitting `operation` entirely falls back to the section's default mode with the
 legacy `match`/`replace` fields, so existing callers keep working unchanged.
 
+#### caido_update_tamper_rule
+
+Full update: pass the complete rule state, not a partial patch. Accepts the same
+`section`, `operation` and legacy `match`/`replace` parameters as
+`caido_create_tamper_rule`.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `id` | string | Tamper rule ID (required) |
+| `name` | string | Rule name (required) |
+| `section` | string | Section to match (required) |
+| `operation` | object | Operation mode and parameters |
+| `match` | string | Legacy shorthand for `operation.match` |
+| `replace` | string | Legacy shorthand for `operation.value` |
+| `condition` | string | HTTPQL filter condition |
+| `sources` | string[] | Traffic sources |
+
 #### caido_test_tamper_rule
 
 Dry-run a rule against a raw HTTP request or response and return the transformed

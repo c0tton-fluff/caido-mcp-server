@@ -30,6 +30,17 @@ func listTamperCollectionsData() map[string]any {
 						},
 						"sources": []string{"INTERCEPT", "REPLAY"},
 						"enable":  map[string]any{"rank": "a0"},
+						"section": map[string]any{
+							"__typename": "TamperSectionRequestHeader",
+							"operation": map[string]any{
+								"__typename": "TamperOperationHeaderUpdate",
+								"matcher":    map[string]any{"name": "X-Request-ID"},
+								"replacer": map[string]any{
+									"__typename": "TamperReplacerTerm",
+									"term":       "fixed",
+								},
+							},
+						},
 					},
 					{
 						"id":        "rule-2",
@@ -37,6 +48,7 @@ func listTamperCollectionsData() map[string]any {
 						"sources":   []string{},
 						"enable":    nil,
 						"condition": nil,
+						"section":   nil,
 					},
 				},
 			},
@@ -104,6 +116,20 @@ func TestListTamperRulesTool(t *testing.T) {
 			}
 			if col.Rules[0].Condition == nil || *col.Rules[0].Condition != "req.host.eq:\"a.com\"" {
 				t.Fatalf("rule[0] condition = %v, want HTTPQL code", col.Rules[0].Condition)
+			}
+			// Section comes from the GraphQL __typename and must arrive as
+			// the tool-facing name, so a listed rule can be fed straight
+			// back into create/update/test.
+			if col.Rules[0].Section != "requestHeader" {
+				t.Fatalf(
+					"rule[0] section = %q, want %q",
+					col.Rules[0].Section, "requestHeader",
+				)
+			}
+			if col.Rules[1].Section != "" {
+				t.Fatalf(
+					"rule[1] has no section; got %q", col.Rules[1].Section,
+				)
 			}
 			if col.Rules[1].Enabled {
 				t.Fatal("rule[1] should be disabled (no enable)")

@@ -94,6 +94,7 @@ var allTools = []registerFunc{
 	RegisterListTamperRulesTool,
 	RegisterCreateTamperRuleTool,
 	RegisterUpdateTamperRuleTool,
+	RegisterTestTamperRuleTool,
 	RegisterToggleTamperRuleTool,
 	RegisterDeleteTamperRuleTool,
 

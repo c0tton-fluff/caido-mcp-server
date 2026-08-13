@@ -46,10 +46,17 @@ func eqStrings(a, b []string) bool {
 // value set its handler already accepts (handler default-rejects anything else,
 // case-sensitively), so the enum adds no new rejection.
 func TestSchemaEnumsAdvertised(t *testing.T) {
+	// Sorted, because the enum is derived from the tamperSections table
+	// (see tamper_section.go) rather than hand-listed, and that derivation
+	// sorts for determinism. Kept as an independent literal on purpose: if
+	// it were generated from the same table this assertion would be
+	// tautological. A section added to the table fails here until it is
+	// added below, which is the intended drift alarm.
 	sections := []string{
-		"requestAll", "requestHeader", "requestBody", "requestPath", "requestQuery",
-		"requestMethod", "requestFirstLine", "requestSNI", "responseAll",
-		"responseHeader", "responseBody", "responseFirstLine", "responseStatusCode",
+		"requestAll", "requestBody", "requestFirstLine", "requestHeader",
+		"requestMethod", "requestPath", "requestQuery", "requestSNI",
+		"responseAll", "responseBody", "responseFirstLine", "responseHeader",
+		"responseStatusCode",
 	}
 	cases := []struct {
 		tool, field string
@@ -60,6 +67,7 @@ func TestSchemaEnumsAdvertised(t *testing.T) {
 		{"caido_run_workflow", "type", []string{"active", "convert"}},
 		{"caido_create_tamper_rule", "section", sections},
 		{"caido_update_tamper_rule", "section", sections},
+		{"caido_test_tamper_rule", "section", sections},
 	}
 	for _, c := range cases {
 		schema := advertisedSchema(t, c.tool)

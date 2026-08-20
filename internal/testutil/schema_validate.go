@@ -86,7 +86,9 @@ func validateOperation(
 		return err
 	}
 
-	doc, gqlErr := gqlparser.LoadQuery(schema, query)
+	// nil rules selects gqlparser's default rule set, matching the
+	// behaviour of the deprecated LoadQuery.
+	doc, gqlErr := gqlparser.LoadQueryWithRules(schema, query, nil)
 	if gqlErr != nil {
 		return fmt.Errorf("invalid query: %s", gqlErr.Error())
 	}

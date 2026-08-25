@@ -3,7 +3,7 @@ package caido
 const (
 	// RequestsQuery is the GraphQL query for listing requests
 	RequestsQuery = `
-query Requests($first: Int, $after: String, $filter: HTTPQL) {
+query Requests($first: Int, $after: String, $filter: HTTPQLInput) {
   requests(first: $first, after: $after, filter: $filter) {
     edges {
       cursor

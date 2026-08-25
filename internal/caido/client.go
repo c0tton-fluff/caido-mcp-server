@@ -91,6 +91,12 @@ func (c *Client) doRequest(
 	return c.client.Run(ctx, req, resp)
 }
 
+// HTTPQLFilterInput wraps an HTTPQL filter string for the requests query,
+// matching Caido's HTTPQLInput schema type ({ code: String! }).
+type HTTPQLFilterInput struct {
+	Code string `json:"code"`
+}
+
 // ListRequestsOptions contains options for listing requests
 type ListRequestsOptions struct {
 	First  int
@@ -121,7 +127,7 @@ func (c *Client) ListRequests(ctx context.Context, opts ListRequestsOptions) (*L
 	}
 
 	if opts.Filter != "" {
-		req.Var("filter", opts.Filter)
+		req.Var("filter", HTTPQLFilterInput{Code: opts.Filter})
 	}
 
 	var resp ListRequestsResult

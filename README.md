@@ -167,7 +167,7 @@ Pass it via the `CAIDO_ACCESS_TOKEN` environment variable. No login command need
 CAIDO_URL=http://localhost:8080 caido-mcp-server login
 ```
 
-This opens your browser for OAuth authentication and saves the token to `~/.caido-mcp/token.json`. Then configure your MCP client:
+This opens your browser for OAuth authentication and saves the token under `~/.caido-mcp/tokens/`. Then configure your MCP client:
 
 ```json
 {
@@ -182,6 +182,12 @@ This opens your browser for OAuth authentication and saves the token to `~/.caid
   }
 }
 ```
+
+Credentials are stored per instance, keyed by the canonical `CAIDO_URL`, so you can stay
+logged in to several Caido instances at once and switch between them without
+re-authenticating. Run `login` once per instance. An existing
+`~/.caido-mcp/token.json` from an earlier version is migrated automatically the first time
+you use it, so upgrading does not require a fresh login.
 
 **3. Use it**
 

@@ -11,21 +11,24 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func loadToken() (*auth.StoredToken, error) {
-	store, err := auth.NewTokenStore()
+func loadToken(caidoURL string) (*auth.StoredToken, error) {
+	store, err := auth.NewTokenStore(caidoURL)
 	if err != nil {
 		return nil, err
 	}
 	token, err := store.Load()
 	if err != nil {
 		return nil, fmt.Errorf(
-			"no token found - run 'caido-mcp-server login' first: %w",
-			err,
+			"no token found for %s - run "+
+				"'caido-mcp-server login --url %s' first: %w",
+			store.ServerURL(), caidoURL, err,
 		)
 	}
 	if token == nil {
 		return nil, fmt.Errorf(
-			"no token found - run 'caido-mcp-server login' first",
+			"no token found for %s - run "+
+				"'caido-mcp-server login --url %s' first",
+			store.ServerURL(), caidoURL,
 		)
 	}
 	return token, nil
@@ -49,7 +52,7 @@ func newClient(cmd *cobra.Command) (*caido.Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	tok, err := loadToken()
+	tok, err := loadToken(url)
 	if err != nil {
 		return nil, err
 	}
@@ -60,7 +63,7 @@ func newClient(cmd *cobra.Command) (*caido.Client, error) {
 	}
 	client.SetAccessToken(tok.AccessToken)
 
-	tokenStore, err := auth.NewTokenStore()
+	tokenStore, err := auth.NewTokenStore(url)
 	if err != nil {
 		return nil, fmt.Errorf("token store: %w", err)
 	}

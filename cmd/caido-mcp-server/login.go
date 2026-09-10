@@ -19,7 +19,10 @@ This command initiates an OAuth authentication flow:
 1. Opens your browser to the Caido authentication page
 2. Displays a code to enter in the browser
 3. Waits for you to complete authentication
-4. Saves the token to ~/.caido-mcp/token.json for later use by the 'serve' command.`,
+4. Saves the token under ~/.caido-mcp/tokens/ for later use by the 'serve' command.
+
+Credentials are stored per instance, so you can stay logged in to several
+Caido instances at once and switch between them without re-authenticating.`,
 	RunE: runLogin,
 }
 
@@ -40,7 +43,7 @@ func runLogin(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to create client: %w", err)
 	}
 
-	authenticator, err := auth.NewAuthenticator(client)
+	authenticator, err := auth.NewAuthenticator(client, caidoURL)
 	if err != nil {
 		return fmt.Errorf(
 			"failed to create authenticator: %w", err,

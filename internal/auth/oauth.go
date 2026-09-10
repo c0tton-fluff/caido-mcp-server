@@ -20,11 +20,13 @@ type Authenticator struct {
 	tokenStore *TokenStore
 }
 
-// NewAuthenticator creates a new authenticator
+// NewAuthenticator creates a new authenticator. serverURL scopes the stored
+// credentials, so logging in to one instance does not evict another's token.
 func NewAuthenticator(
 	client *caido.Client,
+	serverURL string,
 ) (*Authenticator, error) {
-	tokenStore, err := NewTokenStore()
+	tokenStore, err := NewTokenStore(serverURL)
 	if err != nil {
 		return nil, err
 	}

@@ -15,7 +15,13 @@ var statusCmd = &cobra.Command{
 }
 
 func runStatus(cmd *cobra.Command, args []string) error {
-	tok, err := loadToken()
+	caidoURL, err := getCaidoURL(cmd)
+	if err != nil {
+		fmt.Printf("Auth: FAIL - %v\n", err)
+		return nil
+	}
+
+	tok, err := loadToken(caidoURL)
 	if err != nil {
 		fmt.Printf("Auth: FAIL - %v\n", err)
 		return nil

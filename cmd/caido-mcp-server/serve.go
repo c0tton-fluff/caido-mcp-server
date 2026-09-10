@@ -67,7 +67,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("failed to create client: %w", err)
 		}
 
-		token, tokenStore, err := getTokenAndStore(ctx, client)
+		token, tokenStore, err := getTokenAndStore(ctx, client, caidoURL)
 		if err != nil {
 			return err
 		}
@@ -156,13 +156,14 @@ func makeTokenRefresher(
 	}
 }
 
-// getTokenAndStore retrieves the access token and returns the
+// getTokenAndStore retrieves the access token for caidoURL and returns the
 // token store for use in auto-refresh.
 func getTokenAndStore(
 	ctx context.Context,
 	client *caido.Client,
+	caidoURL string,
 ) (string, *auth.TokenStore, error) {
-	tokenStore, err := auth.NewTokenStore()
+	tokenStore, err := auth.NewTokenStore(caidoURL)
 	if err != nil {
 		return "", nil, fmt.Errorf(
 			"failed to create token store: %w", err,
@@ -178,8 +179,9 @@ func getTokenAndStore(
 
 	if storedToken == nil {
 		return "", nil, fmt.Errorf(
-			"no authentication token found. " +
-				"Please run 'caido-mcp-server login' first",
+			"no authentication token found for %s. "+
+				"Please run 'caido-mcp-server login --url %s' first",
+			tokenStore.ServerURL(), caidoURL,
 		)
 	}
 

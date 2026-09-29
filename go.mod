@@ -7,7 +7,7 @@ require (
 	github.com/caido-community/sdk-go v0.5.1-0.20260610122908-f03a805241ce
 	github.com/google/jsonschema-go v0.4.3
 	github.com/gorilla/websocket v1.5.3
-	github.com/modelcontextprotocol/go-sdk v1.7.0
+	github.com/modelcontextprotocol/go-sdk v1.8.0
 	github.com/spf13/cobra v1.10.2
 	github.com/vektah/gqlparser/v2 v2.5.37
 )

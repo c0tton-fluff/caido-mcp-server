@@ -22,7 +22,9 @@ type SendRequestInput struct {
 	Host         string `json:"host,omitempty" jsonschema:"Target host (overrides Host header)"`
 	Port         int    `json:"port,omitempty" jsonschema:"Target port (default based on TLS)"`
 	TLS          *bool  `json:"tls,omitempty" jsonschema:"Use HTTPS (default true)"`
-	SessionID    string `json:"sessionId,omitempty" jsonschema:"Replay session ID (optional)"`
+	SessionID    string `json:"sessionId,omitempty" jsonschema:"Replay session ID (optional). Omit with collectionId/name to file the request as a new session."`
+	CollectionID string `json:"collectionId,omitempty" jsonschema:"Create a new replay session for this request inside this collection (from create_replay_collection or list_replay_collections). Cannot be combined with sessionId."`
+	Name         string `json:"name,omitempty" jsonschema:"Title for the new replay session created for this request (e.g. IDOR - read other user invoice). Cannot be combined with sessionId."`
 	BodyLimit    int    `json:"bodyLimit,omitempty" jsonschema:"Response body byte limit (default 2000)"`
 	BodyOffset   int    `json:"bodyOffset,omitempty" jsonschema:"Response body byte offset (default 0)"`
 	UseCookieJar *bool  `json:"useCookieJar,omitempty" jsonschema:"Auto-inject session cookies and persist Set-Cookie (default true). Set false to disable for this call only."`
@@ -116,11 +118,27 @@ func sendRequestHandler(
 			port = httputil.DefaultPort(useTLS)
 		}
 
-		sessionID, err := replay.GetOrCreateSession(
-			ctx, client, input.SessionID,
-		)
-		if err != nil {
-			return nil, SendRequestOutput{}, err
+		// collectionId/name file the request as its own new session, so
+		// they are meaningless against an existing one.
+		newSession := input.CollectionID != "" || input.Name != ""
+		if newSession && input.SessionID != "" {
+			return nil, SendRequestOutput{}, fmt.Errorf(
+				"collectionId/name create a new session and cannot be combined with sessionId; " +
+					"use caido_move_replay_session to refile an existing one",
+			)
+		}
+
+		// A new session starts with an empty cookie jar, so there is
+		// nothing to resolve or inject until the send assigns its ID.
+		var sessionID string
+		if !newSession {
+			var err error
+			sessionID, err = replay.GetOrCreateSession(
+				ctx, client, input.SessionID,
+			)
+			if err != nil {
+				return nil, SendRequestOutput{}, err
+			}
 		}
 
 		// Cookie jar (RFC 6265): inject session cookies into raw when
@@ -132,7 +150,7 @@ func sendRequestHandler(
 		jarStatus := &CookieJarStatus{Enabled: useJar}
 		reqURL := httputil.RequestURL(host, port, useTLS, raw)
 
-		if useJar {
+		if useJar && !newSession {
 			if httputil.HasHeader(raw, "Cookie") {
 				jarStatus.Skipped = "explicit Cookie header preserved"
 			} else {
@@ -150,9 +168,17 @@ func sendRequestHandler(
 		// session was used, allow Send to replace the cached session on a
 		// busy/empty-session fallback.
 		conn := caido.ReplayConnection{Host: host, Port: port, IsTLS: useTLS}
-		sendRes, err := replay.Send(
-			ctx, client, sessionID, raw, conn, input.SessionID == "",
-		)
+		var sendRes *replay.SendResult
+		var err error
+		if newSession {
+			sendRes, err = replay.SendNew(
+				ctx, client, raw, conn, input.CollectionID, input.Name,
+			)
+		} else {
+			sendRes, err = replay.Send(
+				ctx, client, sessionID, raw, conn, input.SessionID == "",
+			)
+		}
 		if err != nil {
 			return nil, SendRequestOutput{}, fmt.Errorf(
 				"failed to send request: %w", err,
@@ -294,7 +320,7 @@ func RegisterSendRequestTool(
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "caido_send_request",
 		Title:       "Send HTTP Request",
-		Description: `Send an HTTP request; returns statusCode, headers, body, and a response fingerprint (title, redirect, cookie names, word count, notableHeaders). Polls up to 10s; on timeout returns entryId for get_replay_entry. Session cookies auto-persist across calls with the same sessionId (useCookieJar:false to disable). includeBody:false omits body text; marker checks response body for reflection. See README "Response fingerprinting" for field details.`,
+		Description: `Send an HTTP request; returns statusCode, headers, body, and a response fingerprint (title, redirect, cookie names, word count, notableHeaders). Polls up to 10s; on timeout returns entryId for get_replay_entry. Without sessionId, requests reuse one unnamed default session. To file a request as its own titled session inside a collection, pass collectionId and/or name instead of sessionId; reuse the returned sessionId for follow-ups. Session cookies auto-persist across calls with the same sessionId (useCookieJar:false to disable). includeBody:false omits body text; marker checks response body for reflection. See README "Response fingerprinting" for field details.`,
 		InputSchema: schemaFor[SendRequestInput](func(s *jsonschema.Schema) {
 			if p := prop(s, "raw"); p != nil {
 				p.MaxLength = intPtr(maxRawRequestBytes)

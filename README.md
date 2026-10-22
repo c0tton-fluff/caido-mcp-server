@@ -313,6 +313,8 @@ Read-only data exposed via the MCP resources protocol. Agents can read these wit
 | `port` | int | Target port |
 | `tls` | bool | Use HTTPS (default true) |
 | `sessionId` | string | Replay session (auto-managed if omitted) |
+| `collectionId` | string | File the request as a new session in this collection (not with `sessionId`) |
+| `name` | string | Title for that new session (not with `sessionId`) |
 | `bodyLimit` | int | Response body byte limit (default 2000) |
 | `bodyOffset` | int | Response body byte offset (default 0) |
 | `useCookieJar` | bool | Auto-inject session cookies and persist `Set-Cookie` (default true); set false to disable for this call only |

@@ -339,3 +339,61 @@ func TestSendRequestFingerprintExpansion(t *testing.T) {
 		}
 	})
 }
+
+// TestSendRequestNewTitledSession covers collectionId/name: the request is
+// filed as its own new session in the collection under that title, instead
+// of reusing the unnamed default session.
+func TestSendRequestNewTitledSession(t *testing.T) {
+	t.Run("files request in collection under title", func(t *testing.T) {
+		replay.ResetDefaultSession("")
+		t.Cleanup(func() { replay.ResetDefaultSession("") })
+
+		env := testutil.NewMCPTestEnv(t, func(s *mcp.Server, c *caido.Client) {
+			tools.RegisterSendRequestTool(s, c)
+		})
+		env.Mock.ValidateAgainstSchema()
+		env.Mock.On("CreateReplaySession", testutil.CreateReplaySessionSeededResponse("titled-1", "entry-1"))
+		env.Mock.On("RenameReplaySession", testutil.RenameReplaySessionResponse("titled-1", "IDOR - invoice"))
+		env.Mock.On("StartReplayTask", testutil.StartReplayTaskResponse())
+		env.Mock.On("GetReplaySession", testutil.GetReplaySessionResponse("titled-1", "entry-1"))
+		env.Mock.On("GetReplayEntry", testutil.GetReplayEntryResponse("entry-1", "req-1", 200, "ok"))
+
+		result := env.CallTool(t, "caido_send_request", map[string]any{
+			"raw":          "GET /invoice/2 HTTP/1.1\r\nHost: example.com\r\n\r\n",
+			"collectionId": "col-7",
+			"name":         "IDOR - invoice",
+		})
+		if result.IsError {
+			t.Fatalf("unexpected error: %+v", result.Content)
+		}
+		output := testutil.UnmarshalToolResult[tools.SendRequestOutput](t, result)
+		if output.SessionID != "titled-1" || output.StatusCode != 200 {
+			t.Fatalf("want session titled-1 status 200, got %q %d", output.SessionID, output.StatusCode)
+		}
+
+		input, _ := env.Mock.LastVariables("CreateReplaySession")["input"].(map[string]any)
+		if input["collectionId"] != "col-7" {
+			t.Fatalf("want collectionId col-7, got %v", input["collectionId"])
+		}
+		if input["requestSource"] == nil {
+			t.Fatal("new session must be seeded with the request")
+		}
+		if got := env.Mock.LastVariables("RenameReplaySession")["name"]; got != "IDOR - invoice" {
+			t.Fatalf("want rename to %q, got %v", "IDOR - invoice", got)
+		}
+	})
+
+	t.Run("rejects collectionId with sessionId", func(t *testing.T) {
+		env := testutil.NewMCPTestEnv(t, func(s *mcp.Server, c *caido.Client) {
+			tools.RegisterSendRequestTool(s, c)
+		})
+		result := env.CallTool(t, "caido_send_request", map[string]any{
+			"raw":          "GET / HTTP/1.1\r\nHost: example.com\r\n\r\n",
+			"sessionId":    "existing",
+			"collectionId": "col-7",
+		})
+		if !result.IsError {
+			t.Fatal("expected error when combining sessionId with collectionId")
+		}
+	})
+}

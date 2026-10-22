@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- **`caido_send_request` can file a request as a titled session in a collection.** New `collectionId` and `name` params create a fresh replay session seeded with the request, place it in the collection, title it, and send it in one call. Cannot be combined with `sessionId`.
+
+### Fixed
+- **Requests sent to a session from `caido_create_replay_session` ended up in an unnamed session in the default collection.** Caido 0.57 creates such sessions with no entry, so the send fell back to a brand-new session that dropped the name and collection and left the named session empty. The replacement session now inherits the original's collection and name, and the empty original is deleted. The same applies to `caido_edit_request`.
+
 ## [4.3.0] - 2026-07-31
 
 ### Added

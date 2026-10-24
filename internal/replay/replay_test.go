@@ -242,6 +242,28 @@ func TestSend_FallbackKeepsBusyUserSession(t *testing.T) {
 	}
 }
 
+// TestSend_MissingUserSessionErrors verifies that a user-supplied session
+// ID that does not exist (deleted, mistyped, or replaced by an earlier
+// fallback) is reported instead of silently filing the request in a new
+// unnamed session in the default collection.
+func TestSend_MissingUserSessionErrors(t *testing.T) {
+	client, mock, rec := newRecordingEnv(t)
+
+	mock.On("GetReplaySession", map[string]any{"replaySession": nil})
+
+	conn := caido.ReplayConnection{Host: "example.com", Port: 80}
+	_, err := Send(
+		context.Background(), client, "gone",
+		"GET / HTTP/1.1\r\nHost: example.com\r\n\r\n", conn, false,
+	)
+	if err == nil {
+		t.Fatal("want an error for a missing session, got nil")
+	}
+	if _, ok := rec.find("CreateReplaySession"); ok {
+		t.Fatal("must not create a fallback session for a missing user session")
+	}
+}
+
 // TestSend_FallbackDefaultSessionStaysUnfiled verifies the default-session
 // fallback does not rename or refile the replacement.
 func TestSend_FallbackDefaultSessionStaysUnfiled(t *testing.T) {

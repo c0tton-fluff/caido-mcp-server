@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [4.4.1] - 2026-10-24
+
+### Added
+- **`caido_rename_replay_session`** - retitle a replay session, e.g. one already filed under its numeric ID.
+
+### Fixed
+- **Sending to a missing session silently created an unnamed session in the default collection.** A stale `sessionId` (deleted, or replaced by an earlier send to an empty session) now returns an error instead. The cached default session still falls back as before.
+- **v4.4.0 release binaries did not contain the v4.4.0 replay fix.** A manually dispatched Release built the branch head (`a659563`) instead of the tag. Dispatch now checks out the `tag` input.
+
+## [4.4.0] - 2026-10-22
+
 ### Added
 - **`caido_send_request` can file a request as a titled session in a collection.** New `collectionId` and `name` params create a fresh replay session seeded with the request, place it in the collection, title it, and send it in one call. Cannot be combined with `sessionId`.
 

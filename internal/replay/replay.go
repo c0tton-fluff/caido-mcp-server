@@ -74,7 +74,8 @@ type SendResult struct {
 // replaced, the cache is updated. A user-supplied session's name and
 // collection carry over to the replacement, and an empty one (as left by
 // create_replay_session) is deleted so the request lands where the caller
-// put it rather than in an unnamed session in the default collection.
+// put it rather than in an unnamed session in the default collection. A
+// user-supplied session that cannot be read is an error, not a fallback.
 // Returns the session ID used and the previous active entry ID so callers
 // can poll for the new entry.
 func Send(
@@ -89,6 +90,16 @@ func Send(
 	sess, prevEntryID, err := sendOnSession(ctx, client, sessionID, rawB64, conn)
 	if err == nil {
 		return &SendResult{SessionID: sessionID, PreviousEntryID: prevEntryID}, nil
+	}
+	// A user-supplied session that cannot be read has no name or
+	// collection to carry over; a fallback would file the request as an
+	// unnamed session in the default collection. Report it instead.
+	if !cacheReplacement && sess == nil {
+		return nil, fmt.Errorf(
+			"%w; list_replay_sessions shows current IDs (a send to an "+
+				"empty session replaces it and returns the new sessionId)",
+			err,
+		)
 	}
 
 	// Session busy or send failed: create a fresh seeded session and retry.

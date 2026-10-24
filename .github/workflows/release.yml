@@ -2,7 +2,7 @@
 #
 # Trigger: pushing a tag matching 'v*' (e.g. v4.0.0) publishes a GitHub Release.
 # It can also be run manually via workflow_dispatch with an optional 'tag' input,
-# which is only used to derive the VERSION for testing (no tag is created by dispatch).
+# which is checked out and used as the VERSION (no tag is created by dispatch).
 #
 # The release assets are produced by scripts/build.sh and MUST keep the names
 # caido-mcp-server-<os>-<arch>[.exe] and caido-cli-<os>-<arch>[.exe]. install.sh
@@ -30,7 +30,11 @@ jobs:
   release:
     runs-on: ubuntu-latest
     steps:
+      # A dispatch with a tag builds that tag, not the branch head, so the
+      # assets match the tag they are published under.
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag || github.ref }}
 
       - uses: actions/setup-go@v7
         with:

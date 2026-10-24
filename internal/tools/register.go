@@ -36,6 +36,7 @@ var allTools = []registerFunc{
 	RegisterListReplaySessionsTool,
 	RegisterDeleteReplaySessionsTool,
 	RegisterMoveReplaySessionTool,
+	RegisterRenameReplaySessionTool,
 	RegisterGetReplayEntryTool,
 	RegisterClearSessionCookiesTool,
 	RegisterGetSessionCookiesTool,

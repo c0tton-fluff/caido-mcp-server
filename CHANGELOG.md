@@ -9,6 +9,8 @@ All notable changes to this project will be documented in this file.
 Caido 0.58/0.59 support: native race testing through Replay Pipelines, TLS pass-through control, cURL input, and fixes found by testing against a live 0.59.0 server. Works with Caido 0.57+; `caido_race_pipeline` and `caido_passthrough_options` need 0.59.
 
 ### Added
+- **Match & Replace: all four operation modes** on `caido_create_tamper_rule` / `caido_update_tamper_rule` via `operation.kind`: `updateRaw`, `updateValue`, `add`, `remove` (headers and query params by `name`). `updateRaw` gains `match_kind` (`regex`, `value` literal, `full` section) and a `workflow_id` replacer; `caido_list_tamper_rules` now reports each rule's `section`. Omitting `operation` keeps the old match/replace behaviour (#53).
+- **`caido_test_tamper_rule`** - dry-run a Match & Replace rule against a raw request and get the transformed request plus a `changed` flag. Persists nothing and sends no traffic (#53).
 - **`caido_race_pipeline`** - race-condition testing through Caido Replay Pipelines (Caido 0.59+): last-byte synchronization (default), single-packet attack (needs Caido's v2 network stack) or sequential, with the run filed as a Replay session and every request in history. Returns a status-code tally (`statusCounts`) and per-request results. `caido_race_window_send` stays for older Caido and raw-socket control.
 - **`caido_passthrough_options`** - read or update Caido 0.59 TLS pass-through: hosts on `passthroughList` are tunneled without interception or recording, and `outOfScope: true` does the same for everything outside the current scope. Omitted fields are left unchanged.
 - **`caido_send_request` accepts `curl`** - paste a cURL command (bash form, as from a browser's "Copy as cURL") instead of `raw`; host, port and TLS come from its URL. Unsupported options (multipart `-F`, `@file` bodies, unknown flags) are rejected instead of silently dropped.
@@ -17,9 +19,11 @@ Caido 0.58/0.59 support: native race testing through Replay Pipelines, TLS pass-
 - **`caido_rename_replay_session`** - retitle a replay session, e.g. one already filed under its numeric ID.
 
 ### Changed
+- **Credentials are stored per Caido instance** (`~/.caido-mcp/tokens/<host>_<port>-<hash>.json`) instead of one global `token.json`, so switching between instances no longer forces a fresh login. Equivalent URL spellings map to the same file, and an existing `token.json` is migrated to the first instance used (#60, closes #57).
 - **Test mocks validate against the Caido 0.59.0 server schema** instead of the older copy bundled with sdk-go, and `TestSDKOperationsMatchSchema` fails if a Caido release breaks an sdk-go operation. The schema is introspected from a live 0.59.0 server by `scripts/caido-schema-sdl.py`: the file `caido/schemas` publishes for 0.59.0 does not match the released server (`HttpOnePipeline` vs `HttpPipeline`, `allowlist`/`denylist` vs `captureList`/`passthroughList`).
 
 ### Fixed
+- **Tamper rules on `requestMethod`, `responseStatusCode` and `requestSNI` always failed.** The tools sent a `matcher` field those inputs do not declare, so Caido rejected every call; `remove` now rejects a replacement value locally with a clear message (#53).
 - **`caido_rename_replay_session` and `caido_move_replay_session` failed on Pipeline sessions.** Same sdk-go decoder limit as the list tools; both now use tolerant mutations. Found on a live 0.59.0 server, where renaming a new pipeline session failed even though Caido had applied it.
 - **`caido_create_project` reported `create project returned nil` when Caido refused.** It now says why, e.g. `PermissionDeniedUserError (ENTITLEMENT): the Caido plan's project limit is reached`.
 - **`caido_create_replay_session` left an unnamed session behind when the rename failed.** It is now deleted before the error is returned.

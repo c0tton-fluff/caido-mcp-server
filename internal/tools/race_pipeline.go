@@ -226,9 +226,17 @@ func RegisterRacePipelineTool(
 					replay.StrategySinglePacket, replay.StrategyLastByte, replay.StrategySequential,
 				}
 			}
+			if p := prop(s, "host"); p != nil {
+				p.MaxLength = intPtr(200)
+			}
 			if p := prop(s, "requests"); p != nil {
 				p.MinItems = intPtr(1)
 				p.MaxItems = intPtr(maxPipelineRequests)
+				if p.Items != nil {
+					if raw := prop(p.Items, "raw"); raw != nil {
+						raw.MaxLength = intPtr(maxRawRequestBytes)
+					}
+				}
 			}
 		}),
 		Annotations: writeAnn(false, false, true),

@@ -2,9 +2,9 @@
 //
 // IMPORTANT: This tool INTENTIONALLY bypasses the Caido proxy. It dials the
 // target directly from this process with raw sockets, so requests sent here do
-// NOT appear in Caido history. It exists because Caido's replay polls at 50ms
-// and cannot produce a tight race window. Use it for race-condition testing
-// (single-packet / last-byte synchronization).
+// NOT appear in Caido history. It predates Caido's own Replay Pipelines
+// (0.59 added single-packet attack); caido_race_pipeline is the in-proxy
+// path. Keep this for older Caido and for raw-socket control.
 package tools
 
 import (
@@ -133,7 +133,7 @@ func RegisterRaceWindowSendTool(
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "caido_race_window_send",
 		Title:       "Race-Window Send",
-		Description: `Fire multiple raw HTTP/1.1 requests with a synchronized last-byte send (single-packet / race-window style) for race-condition testing. All connections are dialed and parked at a barrier; final bytes are written together after the barrier opens (best-effort simultaneity, not guaranteed sub-ms). WARNING: this BYPASSES the Caido proxy -- requests are sent via raw sockets from this process and do NOT appear in Caido history. Max 50 requests.`,
+		Description: `Fire multiple raw HTTP/1.1 requests with a synchronized last-byte send (single-packet / race-window style) for race-condition testing. All connections are dialed and parked at a barrier; final bytes are written together after the barrier opens (best-effort simultaneity, not guaranteed sub-ms). WARNING: this BYPASSES the Caido proxy -- requests are sent via raw sockets from this process and do NOT appear in Caido history. On Caido 0.59+ prefer caido_race_pipeline (Caido sends the race itself, logged in history); use this for older Caido or raw-socket control. Max 50 requests.`,
 		InputSchema: schemaFor[RaceWindowSendInput](func(s *jsonschema.Schema) {
 			if p := prop(s, "host"); p != nil {
 				p.MaxLength = intPtr(200)

@@ -3,10 +3,11 @@
 //
 // IMPORTANT: This package INTENTIONALLY bypasses the Caido proxy. It dials
 // the target directly with raw Go net/tls sockets, so requests sent here do
-// NOT appear in Caido history. Caido's SDK/GraphQL replay polls at 50ms and
-// cannot produce a sub-millisecond race window; raw sockets from this process
-// are the only way to park multiple connections at a shared barrier before
-// the final bytes are written.
+// NOT appear in Caido history. Caido's draft-then-start replay cannot park
+// connections at a shared barrier, so before Caido 0.59 raw sockets from this
+// process were the only way to do so. Caido 0.59 Replay Pipelines do it inside
+// the proxy (see replay.RunPipeline / caido_race_pipeline); this package stays
+// for older servers and raw-socket control.
 //
 // HONESTY NOTE: The barrier guarantees that every goroutine has written its
 // primer and reached the send point before ANY final byte is written. It does

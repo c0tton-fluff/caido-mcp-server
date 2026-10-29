@@ -8,6 +8,10 @@ All notable changes to this project will be documented in this file.
 - **Test mocks validate against the Caido 0.59.0 server schema** (vendored from `caido/schemas`) instead of the older copy bundled with sdk-go, and `TestSDKOperationsMatchSchema` fails if a Caido release breaks an sdk-go operation.
 
 ### Added
+- **`caido_race_pipeline`** - race-condition testing through Caido Replay Pipelines (Caido 0.59+): single-packet attack (HTTP/2), last-byte synchronization or sequential, with the run filed as a Replay session and every request in history. Returns a status-code tally (`statusCounts`) and per-request results. `caido_race_window_send` stays for older Caido and raw-socket control.
+- **`caido_passthrough_options`** - read or update Caido 0.59 pass-through options (tunnel traffic without recording it; `outOfScope` keeps history to in-scope requests). Omitted fields are left unchanged.
+- **`caido_send_request` accepts `curl`** - paste a cURL command (bash form, as from a browser's "Copy as cURL") instead of `raw`; host, port and TLS come from its URL. Unsupported options (multipart `-F`, `@file` bodies, unknown flags) are rejected instead of silently dropped.
+- **HTTPQL `header`/`body` fields** documented in `caido_list_requests` (Caido 0.58+), so agents match headers and bodies directly instead of scanning `raw`.
 - **`caido_send_request` can file a request as a titled session in a collection.** New `collectionId` and `name` params create a fresh replay session seeded with the request, place it in the collection, title it, and send it in one call. Cannot be combined with `sessionId`.
 - **`caido_rename_replay_session`** - retitle a replay session, e.g. one already filed under its numeric ID.
 

@@ -80,6 +80,21 @@ func (s *SessionCookieStore) Clear(sessionID string) bool {
 	return true
 }
 
+// Copy makes to start with from's cookies. net/http/cookiejar cannot
+// enumerate its contents, so the jar is shared by reference: later
+// Set-Cookie on either ID is visible to both until Clear(from) drops the
+// old key. A no-op when from has no jar.
+func (s *SessionCookieStore) Copy(from, to string) {
+	if from == to {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if jar, ok := s.jars[from]; ok {
+		s.jars[to] = jar
+	}
+}
+
 // Has reports whether sessionID has any tracked jar (cookies may still
 // be empty if the jar was created and immediately read).
 func (s *SessionCookieStore) Has(sessionID string) bool {

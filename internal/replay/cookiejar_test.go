@@ -147,3 +147,23 @@ func TestSessionCookieStore_EmptyInputsAreNoop(t *testing.T) {
 		t.Fatalf("nil cookies should not error: %v", err)
 	}
 }
+
+func TestSessionCookieStore_Copy(t *testing.T) {
+	s := NewSessionCookieStore()
+	u, _ := url.Parse("https://example.com/")
+	if err := s.SetCookies("old", u, []*http.Cookie{{Name: "sid", Value: "1"}}); err != nil {
+		t.Fatal(err)
+	}
+	s.Copy("old", "new")
+	if got := s.Cookies("new", u); len(got) != 1 || got[0].Name != "sid" {
+		t.Fatalf("new session should inherit sid, got %v", got)
+	}
+	s.Clear("old")
+	if got := s.Cookies("new", u); len(got) != 1 {
+		t.Fatalf("clearing the old ID must not drop the copy, got %v", got)
+	}
+	s.Copy("missing", "other")
+	if s.Has("other") {
+		t.Fatal("copying from a session with no jar must be a no-op")
+	}
+}

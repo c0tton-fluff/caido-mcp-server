@@ -75,11 +75,12 @@ type conn struct {
 	res *Result
 }
 
-// Send dials every request connection, writes all but the last byte of each,
-// parks each goroutine at a shared barrier, then releases them together to
-// write their final byte and read the response. Dial failures are recorded in
-// the corresponding Result and do not abort the rest. All connections are
-// closed before Send returns.
+// Send dials every request connection in parallel, writes all but the last
+// byte of each, parks each goroutine at a shared barrier, then releases them
+// together to write their final byte and read the response. Dial failures are
+// recorded in the corresponding Result and do not abort the rest. Cancelling
+// ctx aborts dials and closes live connections, so reads return promptly. All
+// connections are closed before Send returns.
 func Send(ctx context.Context, target Target, requests []Request, bodyLimit int) []Result {
 	if err := validate(target, requests); err != nil {
 		return []Result{{Label: "validation", Error: err.Error()}}
@@ -91,36 +92,44 @@ func Send(ctx context.Context, target Target, requests []Request, bodyLimit int)
 	for i, r := range requests {
 		results[i] = Result{Label: r.Label}
 		conns[i] = conn{req: r, res: &results[i]}
-		c, err := dialOne(ctx, target)
-		if err != nil {
-			results[i].Error = fmt.Sprintf("dial: %v", err)
-			continue
-		}
-		conns[i].Conn = c
 	}
 	defer closeAll(conns)
 
 	release := make(chan struct{})
 	var primed, done sync.WaitGroup
 	for i := range conns {
-		if conns[i].Conn == nil {
-			continue
-		}
 		primed.Add(1)
 		done.Add(1)
-		go runOne(&conns[i], release, &primed, &done, bodyLimit)
+		go runOne(ctx, target, &conns[i], release, &primed, &done, bodyLimit)
 	}
 
-	primed.Wait() // all goroutines parked at the barrier
+	primed.Wait() // every goroutine is parked at the barrier or has failed
 	close(release)
 	done.Wait()
 	return results
 }
 
-// runOne writes the primer, signals readiness, blocks on the barrier, then
-// writes the final byte and reads the response.
-func runOne(c *conn, release <-chan struct{}, primed, done *sync.WaitGroup, bodyLimit int) {
+// runOne dials, writes the primer, signals readiness, blocks on the barrier,
+// then writes the final byte and reads the response. primed.Done runs exactly
+// once on every path (including dial and primer failures) so a failed
+// connection can never hold the barrier shut for the others.
+func runOne(
+	ctx context.Context, target Target, c *conn,
+	release <-chan struct{}, primed, done *sync.WaitGroup, bodyLimit int,
+) {
 	defer done.Done()
+	nc, err := dialOne(ctx, target)
+	if err != nil {
+		c.res.Error = fmt.Sprintf("dial: %v", err)
+		primed.Done()
+		return
+	}
+	c.Conn = nc
+	// Closing the conn on cancel unblocks any pending read or write; a read
+	// deadline would be overwritten by readBody's per-read idle deadline.
+	stop := context.AfterFunc(ctx, func() { _ = nc.Close() })
+	defer stop()
+
 	last, err := writePrimer(c.Conn, c.req.Raw)
 	primed.Done()
 	if err != nil {
@@ -142,11 +151,15 @@ func runOne(c *conn, release <-chan struct{}, primed, done *sync.WaitGroup, body
 func dialOne(ctx context.Context, target Target) (net.Conn, error) {
 	addr := net.JoinHostPort(target.Host, strconv.Itoa(target.Port))
 	dialer := &net.Dialer{Timeout: dialTimeout}
+	// Bound the TLS handshake too: net.Dialer.Timeout only covers the TCP
+	// connect. The conn does not depend on ctx after the dial returns.
+	ctx, cancel := context.WithTimeout(ctx, dialTimeout)
+	defer cancel()
 	if !target.TLS {
 		return dialer.DialContext(ctx, "tcp", addr)
 	}
 	cfg := &tls.Config{ServerName: target.Host, InsecureSkipVerify: true} //nolint:gosec // race testing tool dials arbitrary targets
-	return tls.DialWithDialer(dialer, "tcp", addr, cfg)
+	return (&tls.Dialer{NetDialer: dialer, Config: cfg}).DialContext(ctx, "tcp", addr)
 }
 
 // writePrimer writes everything except the final byte and flushes, returning

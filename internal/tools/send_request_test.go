@@ -3,8 +3,13 @@ package tools_test
 import (
 	"encoding/base64"
 	"fmt"
+	"maps"
+	"net/http"
+	"net/url"
+	"strings"
 	"testing"
 
+	"github.com/c0tton-fluff/caido-mcp-server/v4/internal/httputil"
 	"github.com/c0tton-fluff/caido-mcp-server/v4/internal/replay"
 	"github.com/c0tton-fluff/caido-mcp-server/v4/internal/testutil"
 	"github.com/c0tton-fluff/caido-mcp-server/v4/internal/tools"
@@ -396,4 +401,140 @@ func TestSendRequestNewTitledSession(t *testing.T) {
 			t.Fatal("expected error when combining sessionId with collectionId")
 		}
 	})
+}
+
+// draftRaw decodes the raw request of the last UpdateReplayEntryDraft call.
+func draftRaw(t *testing.T, m *testutil.MockHandler) string {
+	t.Helper()
+	input, _ := m.LastVariables("UpdateReplayEntryDraft")["input"].(map[string]any)
+	httpIn, _ := input["http"].(map[string]any)
+	b64, _ := httpIn["raw"].(string)
+	raw, err := base64.StdEncoding.DecodeString(b64)
+	if err != nil {
+		t.Fatalf("decode draft raw %q: %v", b64, err)
+	}
+	return string(raw)
+}
+
+// TestSendRequestFallbackCarriesJarAndDiff verifies that when the default
+// session is replaced by the fallback, its cookie jar and response-diff
+// baseline follow to the new session instead of silently resetting.
+func TestSendRequestFallbackCarriesJarAndDiff(t *testing.T) {
+	jarURL, _ := url.Parse("https://example.com/")
+	seed := func(t *testing.T, oldID, newID string) {
+		t.Helper()
+		store := replay.DefaultCookieStore()
+		if err := store.SetCookies(oldID, jarURL, []*http.Cookie{{Name: "sid", Value: "abc"}}); err != nil {
+			t.Fatal(err)
+		}
+		httputil.GlobalResponseCache().GetAndSet(oldID, httputil.ResponseDigest{StatusCode: 200, BodyHash: 1, BodySize: 1})
+		t.Cleanup(func() {
+			store.Clear(oldID)
+			store.Clear(newID)
+			httputil.GlobalResponseCache().Clear(oldID)
+			httputil.GlobalResponseCache().Clear(newID)
+			replay.ResetDefaultSession("")
+		})
+	}
+	const raw = "GET /me HTTP/1.1\r\nHost: example.com\r\n\r\n"
+
+	t.Run("busy default keeps old jar and new session injects it", func(t *testing.T) {
+		seed(t, "def-busy", "new-busy")
+		replay.ResetDefaultSession("def-busy")
+		env := testutil.NewMCPTestEnv(t, func(s *mcp.Server, c *caido.Client) {
+			tools.RegisterSendRequestTool(s, c)
+		})
+		// Busy default: has an entry, but the draft update has no mock and
+		// fails, forcing the fallback.
+		env.Mock.On("GetReplaySession", testutil.GetReplaySessionResponse("def-busy", "entry-1"))
+		env.Mock.On("CreateReplaySession", testutil.CreateReplaySessionSeededResponse("new-busy", "entry-9"))
+		env.Mock.On("StartReplayTask", testutil.StartReplayTaskResponse())
+		env.Mock.On("GetReplaySession", testutil.GetReplaySessionResponse("new-busy", "entry-9"))
+		env.Mock.On("GetReplayEntry", testutil.GetReplayEntryResponse("entry-9", "req-9", 200, "response body"))
+
+		first := testutil.UnmarshalToolResult[tools.SendRequestOutput](t, env.CallTool(t, "caido_send_request", map[string]any{"raw": raw}))
+		if first.SessionID != "new-busy" {
+			t.Fatalf("want fallback session new-busy, got %q", first.SessionID)
+		}
+		if first.Diff == nil {
+			t.Fatal("the replacement session must diff against the old baseline, got nil diff")
+		}
+
+		// Next request on the returned session must inject the carried cookie.
+		env.Mock.On("GetReplaySession", testutil.GetReplaySessionResponse("new-busy", "entry-9"))
+		env.Mock.On("UpdateReplayEntryDraft", testutil.UpdateReplayEntryDraftResponse("entry-9"))
+		env.Mock.On("GetReplaySession", testutil.GetReplaySessionResponse("new-busy", "entry-10"))
+		env.Mock.On("GetReplayEntry", testutil.GetReplayEntryResponse("entry-10", "req-10", 200, "response body"))
+		second := testutil.UnmarshalToolResult[tools.SendRequestOutput](t, env.CallTool(t, "caido_send_request", map[string]any{
+			"raw": raw, "sessionId": "new-busy",
+		}))
+		if second.CookieJar == nil || len(second.CookieJar.InjectedCookies) != 1 || second.CookieJar.InjectedCookies[0] != "sid" {
+			t.Fatalf("want sid injected on the replacement session, got %+v", second.CookieJar)
+		}
+		if got := draftRaw(t, env.Mock); !strings.Contains(got, "Cookie: sid=abc") {
+			t.Fatalf("draft should carry the cookie, got %q", got)
+		}
+		if !replay.DefaultCookieStore().Has("def-busy") {
+			t.Fatal("a kept (busy) original must keep its jar")
+		}
+	})
+
+	t.Run("deleted empty default drops old jar", func(t *testing.T) {
+		seed(t, "def-empty", "new-empty")
+		replay.ResetDefaultSession("def-empty")
+		env := testutil.NewMCPTestEnv(t, func(s *mcp.Server, c *caido.Client) {
+			tools.RegisterSendRequestTool(s, c)
+		})
+		env.Mock.On("GetReplaySession", testutil.GetReplaySessionResponse("def-empty", ""))
+		env.Mock.On("CreateReplaySession", testutil.CreateReplaySessionSeededResponse("new-empty", "entry-9"))
+		env.Mock.On("StartReplayTask", testutil.StartReplayTaskResponse())
+		env.Mock.On("DeleteReplaySessions", map[string]any{
+			"deleteReplaySessions": map[string]any{"deletedIds": []string{"def-empty"}},
+		})
+		env.Mock.On("GetReplaySession", testutil.GetReplaySessionResponse("new-empty", "entry-9"))
+		env.Mock.On("GetReplayEntry", testutil.GetReplayEntryResponse("entry-9", "req-9", 200, "response body"))
+
+		out := testutil.UnmarshalToolResult[tools.SendRequestOutput](t, env.CallTool(t, "caido_send_request", map[string]any{"raw": raw}))
+		if out.SessionID != "new-empty" {
+			t.Fatalf("want new-empty, got %q", out.SessionID)
+		}
+		store := replay.DefaultCookieStore()
+		if !store.Has("new-empty") || store.Has("def-empty") {
+			t.Fatalf("jar should move: new=%v old=%v", store.Has("new-empty"), store.Has("def-empty"))
+		}
+	})
+}
+
+// TestSendRequestNewSessionJarSkipped verifies a new titled session explains
+// why no cookie was injected, without overriding the explicit-Cookie message.
+func TestSendRequestNewSessionJarSkipped(t *testing.T) {
+	cases := []struct {
+		name string
+		raw  string
+		args map[string]any
+		want string
+	}{
+		{"new session", "GET / HTTP/1.1\r\nHost: example.com\r\n\r\n", nil, "new session (empty jar)"},
+		{"explicit cookie wins", "GET / HTTP/1.1\r\nHost: example.com\r\nCookie: a=b\r\n\r\n", nil, "explicit Cookie header preserved"},
+		{"jar disabled", "GET / HTTP/1.1\r\nHost: example.com\r\n\r\n", map[string]any{"useCookieJar": false}, ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			replay.ResetDefaultSession("")
+			env := testutil.NewMCPTestEnv(t, func(s *mcp.Server, c *caido.Client) {
+				tools.RegisterSendRequestTool(s, c)
+			})
+			env.Mock.On("CreateReplaySession", testutil.CreateReplaySessionSeededResponse("titled-1", "entry-1"))
+			env.Mock.On("RenameReplaySession", testutil.RenameReplaySessionResponse("titled-1", "t"))
+			env.Mock.On("StartReplayTask", testutil.StartReplayTaskResponse())
+			env.Mock.On("GetReplaySession", testutil.GetReplaySessionResponse("titled-1", "entry-1"))
+			env.Mock.On("GetReplayEntry", testutil.GetReplayEntryResponse("entry-1", "req-1", 200, "ok"))
+			args := map[string]any{"raw": tc.raw, "name": "t"}
+			maps.Copy(args, tc.args)
+			out := testutil.UnmarshalToolResult[tools.SendRequestOutput](t, env.CallTool(t, "caido_send_request", args))
+			if out.CookieJar == nil || out.CookieJar.Skipped != tc.want {
+				t.Fatalf("want skipped %q, got %+v", tc.want, out.CookieJar)
+			}
+		})
+	}
 }

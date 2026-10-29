@@ -105,3 +105,17 @@ func TestResponseCacheClear(t *testing.T) {
 		t.Fatal("expected nil after clear")
 	}
 }
+
+func TestResponseCache_Copy(t *testing.T) {
+	c := &ResponseCache{entries: make(map[string]ResponseDigest)}
+	d := ResponseDigest{StatusCode: 200, BodyHash: 7, BodySize: 3}
+	c.GetAndSet("old", d)
+	c.Copy("old", "new")
+	if got := c.GetAndSet("new", d); got == nil || !got.Same {
+		t.Fatalf("copied baseline should diff as same, got %+v", got)
+	}
+	c.Copy("missing", "other")
+	if got := c.GetAndSet("other", d); got != nil {
+		t.Fatalf("copy from an unknown session must be a no-op, got %+v", got)
+	}
+}

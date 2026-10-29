@@ -58,11 +58,29 @@ func ResetDefaultSession(newID string) {
 	sessionMu.Unlock()
 }
 
+// swapDefaultSession replaces the cached default session with newID only
+// when it still equals oldID, and reports whether it did. A concurrent Send
+// that already replaced the default wins; the loser keeps its own session
+// without clobbering the winner's cache entry.
+func swapDefaultSession(oldID, newID string) bool {
+	sessionMu.Lock()
+	defer sessionMu.Unlock()
+	if defaultSessionID != oldID {
+		return false
+	}
+	defaultSessionID = newID
+	return true
+}
+
 // SendResult holds the outcome of a Send: the session used, the previous
 // active entry ID (for poll filtering), and any task-in-progress signal.
+// When the fallback replaced the caller's session, SessionID differs from
+// the one passed to Send and DeletedOriginal reports whether the original
+// was deleted (an empty orphan) or kept (it has history).
 type SendResult struct {
 	SessionID       string
 	PreviousEntryID string
+	DeletedOriginal bool
 }
 
 // Send dispatches a raw HTTP request on a replay session using the Caido
@@ -114,11 +132,20 @@ func Send(
 			err, err2,
 		)
 	}
-	// The auto-created default session and an empty user-supplied one are
-	// hollow orphans in Caido 0.57 once replaced; best-effort delete them
-	// to avoid leaking a stray session per send. A user session with
-	// entries (busy) keeps its history.
-	if cacheReplacement || (sess != nil && sess.ActiveEntryID == "") {
+	// The fresh session is seeded with the request; start its task before
+	// touching the original, so a failed start leaves the original intact.
+	if _, startErr := client.Replay.StartTask(ctx, newID); startErr != nil {
+		return nil, fmt.Errorf(
+			"start task on fallback session %s: %w", newID, startErr,
+		)
+	}
+	// An empty session (the auto-created default, or one left by
+	// create_replay_session) is a hollow orphan in Caido 0.57 once
+	// replaced; best-effort delete it to avoid leaking a stray session per
+	// send. A session with entries (busy), default or user-supplied,
+	// keeps its history: a concurrent call may still be polling it.
+	deleted := false
+	if sess != nil && sess.ActiveEntryID == "" {
 		if _, delErr := client.Replay.DeleteSessions(
 			ctx, []string{sessionID},
 		); delErr != nil {
@@ -127,16 +154,19 @@ func Send(
 				"replay: failed to delete orphaned session %s: %v\n",
 				sessionID, delErr,
 			)
+		} else {
+			deleted = true
 		}
 	}
 	if cacheReplacement {
-		ResetDefaultSession(newID)
+		// Compare-and-swap: if another call already replaced the default,
+		// keep this call's session (it holds this request) and leave the
+		// winner's cache entry alone.
+		swapDefaultSession(sessionID, newID)
 	}
-	// The fresh session is seeded with the request; just start the task.
-	if _, startErr := client.Replay.StartTask(ctx, newID); startErr != nil {
-		return nil, fmt.Errorf("start task on fallback session: %w", startErr)
-	}
-	return &SendResult{SessionID: newID, PreviousEntryID: ""}, nil
+	return &SendResult{
+		SessionID: newID, PreviousEntryID: "", DeletedOriginal: deleted,
+	}, nil
 }
 
 // SendNew creates a fresh replay session seeded with rawRequest, places it
@@ -183,6 +213,16 @@ func createSeeded(
 	}
 	if name != "" {
 		if _, err := client.Replay.RenameSession(ctx, newID, name); err != nil {
+			// Do not leak the half-built session: nothing returns its ID.
+			if _, delErr := client.Replay.DeleteSessions(
+				ctx, []string{newID},
+			); delErr != nil {
+				fmt.Fprintf(
+					os.Stderr,
+					"replay: failed to delete orphaned session %s: %v\n",
+					newID, delErr,
+				)
+			}
 			return "", fmt.Errorf("rename session %s: %w", newID, err)
 		}
 	}

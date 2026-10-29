@@ -211,7 +211,7 @@ you use it, so upgrading does not require a fresh login.
 | `caido_edit_request` | Modify and resend an existing request. Preserves auth/cookies while changing method, path, headers, or body |
 | `caido_export_curl` | Convert a request to an executable curl command for PoC reports |
 | `caido_create_replay_session` | Create a named replay session, optionally seed with a request |
-| `caido_list_replay_sessions` | List replay sessions |
+| `caido_list_replay_sessions` | List replay sessions with kind (http, ws, pipeline) and collection |
 | `caido_delete_replay_sessions` | Bulk delete replay sessions by ID |
 | `caido_move_replay_session` | Move a session to a different collection |
 | `caido_rename_replay_session` | Rename a replay session (tab title) |

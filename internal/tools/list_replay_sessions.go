@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 
+	"github.com/c0tton-fluff/caido-mcp-server/v4/internal/replay"
 	caido "github.com/caido-community/sdk-go"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -12,9 +13,13 @@ type ListReplaySessionsInput struct{}
 
 // ReplaySessionSummary is a summary of a replay session
 type ReplaySessionSummary struct {
-	ID            string  `json:"id"`
-	Name          string  `json:"name"`
-	ActiveEntryID *string `json:"activeEntryId,omitempty"`
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	// Kind is http, ws or pipeline (Caido 0.58+ race/sequence sessions).
+	Kind           string  `json:"kind"`
+	ActiveEntryID  *string `json:"activeEntryId,omitempty"`
+	CollectionID   string  `json:"collectionId,omitempty"`
+	CollectionName string  `json:"collectionName,omitempty"`
 }
 
 // ListReplaySessionsOutput is the output of the list_replay_sessions tool
@@ -31,7 +36,7 @@ func listReplaySessionsHandler(
 		req *mcp.CallToolRequest,
 		input ListReplaySessionsInput,
 	) (*mcp.CallToolResult, ListReplaySessionsOutput, error) {
-		sessions, err := client.Replay.ListSessionSummaries(ctx, nil)
+		sessions, err := replay.ListSessions(ctx, client)
 		if err != nil {
 			return nil, ListReplaySessionsOutput{}, err
 		}
@@ -41,7 +46,13 @@ func listReplaySessionsHandler(
 		}
 
 		for _, s := range sessions {
-			summary := ReplaySessionSummary{ID: s.ID, Name: s.Name}
+			summary := ReplaySessionSummary{
+				ID:             s.ID,
+				Name:           s.Name,
+				Kind:           s.Kind,
+				CollectionID:   s.CollectionID,
+				CollectionName: s.CollectionName,
+			}
 			if s.ActiveEntryID != "" {
 				id := s.ActiveEntryID
 				summary.ActiveEntryID = &id
@@ -60,7 +71,7 @@ func RegisterListReplaySessionsTool(
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "caido_list_replay_sessions",
 		Title:       "List Replay Sessions",
-		Description: `List replay sessions. Returns id and name for each session.`,
+		Description: `List replay sessions. Returns id, name, kind (http, ws, pipeline) and collection for each session.`,
 		InputSchema: map[string]any{"type": "object"},
 		Annotations: readOnlyAnn(),
 	}, listReplaySessionsHandler(client))

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/c0tton-fluff/caido-mcp-server/v4/internal/replay"
 	caido "github.com/caido-community/sdk-go"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -30,7 +31,8 @@ func replaySessionHandler(client *caido.Client) mcp.ResourceHandler {
 
 		s, err := client.Replay.GetSession(ctx, id)
 		if err != nil {
-			return nil, fmt.Errorf("get replay session %s: %w", id, err)
+			return nil, fmt.Errorf("get replay session %s: %w", id,
+				replay.ExplainUnsupportedKind(err, "replay session", id))
 		}
 		if s == nil {
 			return nil, mcp.ResourceNotFoundError(req.Params.URI)

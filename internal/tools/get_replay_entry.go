@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/c0tton-fluff/caido-mcp-server/v4/internal/httputil"
+	"github.com/c0tton-fluff/caido-mcp-server/v4/internal/replay"
 	caido "github.com/caido-community/sdk-go"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -46,7 +47,9 @@ func getReplayEntryHandler(
 
 		entry, err := client.Replay.GetEntry(ctx, input.ID, "")
 		if err != nil {
-			return nil, GetReplayEntryOutput{}, err
+			return nil, GetReplayEntryOutput{}, replay.ExplainUnsupportedKind(
+				err, "replay entry", input.ID,
+			)
 		}
 
 		if entry == nil {

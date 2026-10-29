@@ -1,10 +1,9 @@
 package testutil
 
 import (
+	_ "embed"
 	"fmt"
-	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"sync"
 
@@ -25,9 +24,20 @@ import (
 //	Invalid value for argument "input.section.requestMethod.operation.update",
 //	unknown field "matcher" of type "TamperOperationMethodUpdateInput"
 //
-// The schema is read from the pinned sdk-go module rather than vendored
-// here, so it cannot drift from the version the client actually generates
-// against. Reading it costs one `go list` per test binary.
+// The schema is the published Caido proxy schema (caido/schemas,
+// schemas/proxy/schema.graphql) for the server version this repo targets,
+// vendored here because sdk-go lags the server: its bundled schema stops at
+// 0.58.0 and has no Pipeline sessions. Validating against the server's
+// schema is what matters, since the server is what rejects a bad call.
+// TestSDKOperationsMatchSchema keeps the generated sdk-go operations honest
+// against the same file, so a server change that breaks them fails here.
+// To bump: replace the file and CaidoSchemaVersion together.
+
+// CaidoSchemaVersion is the Caido release the vendored schema comes from.
+const CaidoSchemaVersion = "0.59.0"
+
+//go:embed caido-schema-v0.59.0.graphql
+var caidoSchemaSource string
 
 var (
 	schemaOnce sync.Once
@@ -35,31 +45,20 @@ var (
 	schemaErr  error
 )
 
-// loadCaidoSchema parses the GraphQL schema shipped by the pinned sdk-go
-// module. Result is cached for the lifetime of the test binary.
+// loadCaidoSchema parses the vendored Caido schema. Result is cached for
+// the lifetime of the test binary.
 func loadCaidoSchema() (*ast.Schema, error) {
 	schemaOnce.Do(func() {
-		dir, err := sdkModuleDir()
-		if err != nil {
-			schemaErr = err
-			return
-		}
-		path := filepath.Join(dir, "graphql", "schema.graphql")
-		src, err := os.ReadFile(path) //nolint:gosec // path derived from go list
-		if err != nil {
-			schemaErr = fmt.Errorf("read caido schema %s: %w", path, err)
-			return
-		}
 		schemaVal, schemaErr = gqlparser.LoadSchema(&ast.Source{
-			Name:  "schema.graphql",
-			Input: string(src),
+			Name:  "caido-schema-v" + CaidoSchemaVersion + ".graphql",
+			Input: caidoSchemaSource,
 		})
 	})
 	return schemaVal, schemaErr
 }
 
-// sdkModuleDir resolves the on-disk directory of the pinned sdk-go module.
-func sdkModuleDir() (string, error) {
+// SDKModuleDir resolves the on-disk directory of the pinned sdk-go module.
+func SDKModuleDir() (string, error) {
 	out, err := exec.Command(
 		"go", "list", "-m", "-f", "{{.Dir}}",
 		"github.com/caido-community/sdk-go",
@@ -72,6 +71,19 @@ func sdkModuleDir() (string, error) {
 		return "", fmt.Errorf("sdk-go module directory is empty")
 	}
 	return dir, nil
+}
+
+// ValidateDocument checks a GraphQL document (one or more operations and
+// fragments) against the vendored Caido schema, without variables.
+func ValidateDocument(query string) error {
+	schema, err := loadCaidoSchema()
+	if err != nil {
+		return err
+	}
+	if _, gqlErr := gqlparser.LoadQueryWithRules(schema, query, nil); gqlErr != nil {
+		return fmt.Errorf("invalid query: %s", gqlErr.Error())
+	}
+	return nil
 }
 
 // validateOperation checks a query and its variables against the Caido

@@ -4,16 +4,20 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-### Changed
-- **Test mocks validate against the Caido 0.59.0 server schema** instead of the older copy bundled with sdk-go, and `TestSDKOperationsMatchSchema` fails if a Caido release breaks an sdk-go operation. The schema is introspected from a live 0.59.0 server by `scripts/caido-schema-sdl.py`: the file `caido/schemas` publishes for 0.59.0 does not match the released server (`HttpOnePipeline` vs `HttpPipeline`, `allowlist`/`denylist` vs `captureList`/`passthroughList`).
+## [4.4.0] - 2026-10-29
+
+Caido 0.58/0.59 support: native race testing through Replay Pipelines, TLS pass-through control, cURL input, and fixes found by testing against a live 0.59.0 server. Works with Caido 0.57+; `caido_race_pipeline` and `caido_passthrough_options` need 0.59.
 
 ### Added
 - **`caido_race_pipeline`** - race-condition testing through Caido Replay Pipelines (Caido 0.59+): last-byte synchronization (default), single-packet attack (needs Caido's v2 network stack) or sequential, with the run filed as a Replay session and every request in history. Returns a status-code tally (`statusCounts`) and per-request results. `caido_race_window_send` stays for older Caido and raw-socket control.
-- **`caido_passthrough_options`** - read or update Caido 0.59 pass-through options (tunnel traffic without recording it; `outOfScope` keeps history to in-scope requests). Omitted fields are left unchanged.
+- **`caido_passthrough_options`** - read or update Caido 0.59 TLS pass-through: hosts on `passthroughList` are tunneled without interception or recording, and `outOfScope: true` does the same for everything outside the current scope. Omitted fields are left unchanged.
 - **`caido_send_request` accepts `curl`** - paste a cURL command (bash form, as from a browser's "Copy as cURL") instead of `raw`; host, port and TLS come from its URL. Unsupported options (multipart `-F`, `@file` bodies, unknown flags) are rejected instead of silently dropped.
 - **HTTPQL `header`/`body` fields** documented in `caido_list_requests` (Caido 0.58+), so agents match headers and bodies directly instead of scanning `raw`.
 - **`caido_send_request` can file a request as a titled session in a collection.** New `collectionId` and `name` params create a fresh replay session seeded with the request, place it in the collection, title it, and send it in one call. Cannot be combined with `sessionId`.
 - **`caido_rename_replay_session`** - retitle a replay session, e.g. one already filed under its numeric ID.
+
+### Changed
+- **Test mocks validate against the Caido 0.59.0 server schema** instead of the older copy bundled with sdk-go, and `TestSDKOperationsMatchSchema` fails if a Caido release breaks an sdk-go operation. The schema is introspected from a live 0.59.0 server by `scripts/caido-schema-sdl.py`: the file `caido/schemas` publishes for 0.59.0 does not match the released server (`HttpOnePipeline` vs `HttpPipeline`, `allowlist`/`denylist` vs `captureList`/`passthroughList`).
 
 ### Fixed
 - **`caido_rename_replay_session` and `caido_move_replay_session` failed on Pipeline sessions.** Same sdk-go decoder limit as the list tools; both now use tolerant mutations. Found on a live 0.59.0 server, where renaming a new pipeline session failed even though Caido had applied it.

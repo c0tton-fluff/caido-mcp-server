@@ -22,7 +22,7 @@ func NewMockHandler() *MockHandler {
 }
 
 // ValidateAgainstSchema makes the mock check every incoming query and its
-// variables against the pinned sdk-go GraphQL schema, returning a GraphQL
+// variables against the vendored Caido GraphQL schema, returning a GraphQL
 // error response when they do not conform. Opt in from any test whose
 // subject builds GraphQL input by hand -- without it the mock accepts
 // input the real server rejects. See schema_validate.go.

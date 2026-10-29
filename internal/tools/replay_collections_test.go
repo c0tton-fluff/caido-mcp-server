@@ -12,14 +12,24 @@ import (
 // listReplaySessionsResponse builds the GraphQL data object for ListReplaySessions.
 // Top-level field is "replaySessions" (a connection of edges->node).
 func listReplaySessionsResponse(sessions ...map[string]any) map[string]any {
+	return listReplaySessionsPage("", sessions...)
+}
+
+// listReplaySessionsPage is listReplaySessionsResponse with a next-page
+// cursor; an empty next marks the last page.
+func listReplaySessionsPage(next string, sessions ...map[string]any) map[string]any {
 	edges := make([]map[string]any, len(sessions))
 	for i, s := range sessions {
 		edges[i] = map[string]any{"node": s}
 	}
+	var cursor any
+	if next != "" {
+		cursor = next
+	}
 	return map[string]any{
 		"replaySessions": map[string]any{
 			"edges":    edges,
-			"pageInfo": map[string]any{"hasNextPage": false, "endCursor": nil},
+			"pageInfo": map[string]any{"hasNextPage": next != "", "endCursor": cursor},
 			"count":    map[string]any{"value": len(sessions)},
 		},
 	}
@@ -45,7 +55,9 @@ func TestListReplaySessions(t *testing.T) {
 	tests := []struct {
 		name      string
 		mock      map[string]any
+		nextPages []map[string]any // served after mock, in order
 		wantNames []string
+		wantKinds []string // checked when set
 		wantErr   bool
 	}{
 		{
@@ -70,6 +82,46 @@ func TestListReplaySessions(t *testing.T) {
 				},
 			),
 			wantNames: []string{"auth", "api"},
+			wantKinds: []string{"http", "http"},
+		},
+		{
+			// Regression: Caido 0.58+ Pipeline sessions made the sdk-go
+			// decoder fail the whole list with "unexpected concrete type".
+			name: "pipeline session lists instead of failing",
+			mock: listReplaySessionsResponse(
+				map[string]any{
+					"__typename":  "ReplaySessionHttp",
+					"id":          "sess-1",
+					"name":        "auth",
+					"activeEntry": map[string]any{"id": "entry-9"},
+					"collection":  map[string]any{"id": "col-1", "name": "main"},
+				},
+				map[string]any{
+					"__typename": "ReplaySessionHttpOnePipeline",
+					"id":         "sess-2",
+					"name":       "race",
+				},
+			),
+			wantNames: []string{"auth", "race"},
+			wantKinds: []string{"http", "pipeline"},
+		},
+		{
+			name: "follows pagination",
+			mock: listReplaySessionsPage("cursor-1", map[string]any{
+				"__typename":  "ReplaySessionHttp",
+				"id":          "sess-1",
+				"name":        "auth",
+				"activeEntry": map[string]any{"id": "entry-9"},
+				"collection":  map[string]any{"id": "col-1", "name": "main"},
+			}),
+			nextPages: []map[string]any{listReplaySessionsResponse(map[string]any{
+				"__typename": "ReplaySessionWs",
+				"id":         "sess-2",
+				"name":       "socket",
+				"collection": map[string]any{"id": "col-1", "name": "main"},
+			})},
+			wantNames: []string{"auth", "socket"},
+			wantKinds: []string{"http", "ws"},
 		},
 		{
 			name:      "empty list",
@@ -88,8 +140,12 @@ func TestListReplaySessions(t *testing.T) {
 			env := testutil.NewMCPTestEnv(t, func(s *mcp.Server, c *caido.Client) {
 				tools.RegisterListReplaySessionsTool(s, c)
 			})
+			env.Mock.ValidateAgainstSchema()
 			if tt.mock != nil {
-				env.Mock.On("ListReplaySessions", tt.mock)
+				env.Mock.On("ListReplaySessionsTolerant", tt.mock)
+				for _, page := range tt.nextPages {
+					env.Mock.On("ListReplaySessionsTolerant", page)
+				}
 			}
 
 			result := env.CallTool(t, "caido_list_replay_sessions", map[string]any{})
@@ -113,12 +169,26 @@ func TestListReplaySessions(t *testing.T) {
 					t.Errorf("session %d: want name %q, got %q", i, want, out.Sessions[i].Name)
 				}
 			}
+			for i, want := range tt.wantKinds {
+				if out.Sessions[i].Kind != want {
+					t.Errorf("session %d: want kind %q, got %q", i, want, out.Sessions[i].Kind)
+				}
+			}
+			if len(tt.nextPages) > 0 {
+				if got := env.Mock.LastVariables("ListReplaySessionsTolerant")["after"]; got != "cursor-1" {
+					t.Errorf("want second page requested after cursor-1, got %v", got)
+				}
+			}
 			if len(out.Sessions) > 0 {
 				if out.Sessions[0].ActiveEntryID == nil || *out.Sessions[0].ActiveEntryID != "entry-9" {
 					t.Errorf("want activeEntryId entry-9 on first session, got %v", out.Sessions[0].ActiveEntryID)
 				}
 				if out.Sessions[1].ActiveEntryID != nil {
 					t.Errorf("want nil activeEntryId on second session, got %v", *out.Sessions[1].ActiveEntryID)
+				}
+				if out.Sessions[0].CollectionID != "col-1" || out.Sessions[0].CollectionName != "main" {
+					t.Errorf("want collection col-1/main on first session, got %q/%q",
+						out.Sessions[0].CollectionID, out.Sessions[0].CollectionName)
 				}
 			}
 		})
@@ -135,8 +205,8 @@ func TestListReplayCollections(t *testing.T) {
 		{
 			name: "lists collections",
 			mock: listReplayCollectionsResponse(
-				map[string]any{"id": "col-1", "name": "main", "sessions": []any{}},
-				map[string]any{"id": "col-2", "name": "scratch", "sessions": []any{}},
+				map[string]any{"id": "col-1", "name": "main"},
+				map[string]any{"id": "col-2", "name": "scratch"},
 			),
 			wantIDs: []string{"col-1", "col-2"},
 		},
@@ -157,8 +227,9 @@ func TestListReplayCollections(t *testing.T) {
 			env := testutil.NewMCPTestEnv(t, func(s *mcp.Server, c *caido.Client) {
 				tools.RegisterListReplayCollectionsTool(s, c)
 			})
+			env.Mock.ValidateAgainstSchema()
 			if tt.mock != nil {
-				env.Mock.On("ListReplaySessionCollections", tt.mock)
+				env.Mock.On("ListReplaySessionCollectionsTolerant", tt.mock)
 			}
 
 			result := env.CallTool(t, "caido_list_replay_collections", map[string]any{})

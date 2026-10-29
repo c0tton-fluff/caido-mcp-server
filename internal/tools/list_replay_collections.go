@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 
+	"github.com/c0tton-fluff/caido-mcp-server/v4/internal/replay"
 	caido "github.com/caido-community/sdk-go"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -26,22 +27,19 @@ func listReplayCollectionsHandler(
 		req *mcp.CallToolRequest,
 		input ListReplayCollectionsInput,
 	) (*mcp.CallToolResult, ListReplayCollectionsOutput, error) {
-		resp, err := client.Replay.ListCollections(ctx, nil)
+		collections, err := replay.ListCollections(ctx, client)
 		if err != nil {
 			return nil, ListReplayCollectionsOutput{}, err
 		}
 
-		conn := resp.ReplaySessionCollections
 		output := ListReplayCollectionsOutput{
 			Collections: make(
-				[]ReplayCollectionSummary, 0, len(conn.Edges),
+				[]ReplayCollectionSummary, 0, len(collections),
 			),
 		}
-
-		for _, edge := range conn.Edges {
-			c := edge.Node
+		for _, c := range collections {
 			output.Collections = append(output.Collections, ReplayCollectionSummary{
-				ID:   c.Id,
+				ID:   c.ID,
 				Name: c.Name,
 			})
 		}

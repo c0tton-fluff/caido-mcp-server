@@ -4,11 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+- **Test mocks validate against the Caido 0.59.0 server schema** (vendored from `caido/schemas`) instead of the older copy bundled with sdk-go, and `TestSDKOperationsMatchSchema` fails if a Caido release breaks an sdk-go operation.
+
 ### Added
 - **`caido_send_request` can file a request as a titled session in a collection.** New `collectionId` and `name` params create a fresh replay session seeded with the request, place it in the collection, title it, and send it in one call. Cannot be combined with `sessionId`.
 - **`caido_rename_replay_session`** - retitle a replay session, e.g. one already filed under its numeric ID.
 
 ### Fixed
+- **`caido_list_replay_sessions` and `caido_list_replay_collections` failed outright once a project held a Caido Pipeline session (0.58+).** The sdk-go decoders reject session kinds they were not generated for. Both tools now use tolerant queries that page through every result, and sessions report a `kind` (`http`, `ws`, `pipeline`) plus their collection. Reading a pipeline session or entry through the other tools now says what it is instead of surfacing the raw decoder error.
 - **Requests sent to a session from `caido_create_replay_session` ended up in an unnamed session in the default collection.** Caido 0.57 creates such sessions with no entry, so the send fell back to a brand-new session that dropped the name and collection and left the named session empty. The replacement session now inherits the original's collection and name, and the empty original is deleted. The same applies to `caido_edit_request`.
 - **Sending to a missing session silently created an unnamed session in the default collection.** A stale `sessionId` (deleted, or replaced by an earlier send to an empty session) now returns an error instead. The cached default session still falls back as before.
 - **Manually dispatched Release built the branch head, not the requested tag.** The `workflow_dispatch` run now checks out the `tag` input, so assets match the tag they are published under.

@@ -81,7 +81,7 @@ func RegisterCreateReplaySessionTool(
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "caido_create_replay_session",
 		Title:       "Create Replay Session",
-		Description: `Create a named replay session. Optionally seed it with an existing request and assign to a collection. Use this to organize replay work by target or task.`,
+		Description: `Create a named replay session. Optionally seed it with an existing request and assign to a collection. To send a new raw request as its own titled session in a collection, prefer caido_send_request with collectionId and name (one call).`,
 		Annotations: writeAnn(false, false, false),
 	}, createReplaySessionHandler(client))
 }

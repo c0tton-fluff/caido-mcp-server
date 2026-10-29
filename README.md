@@ -22,7 +22,7 @@
 
 Two ways to interact with your Caido proxy:
 
-- **MCP Server** - expose 67 tools and 6 read-only resources to AI assistants (Claude Code, Cursor, etc.) via the Model Context Protocol
+- **MCP Server** - expose 68 tools and 6 read-only resources to AI assistants (Claude Code, Cursor, etc.) via the Model Context Protocol
 - **CLI** - standalone terminal client for pentesters who prefer the command line
 
 Both share the same auth token, the same Go SDK, and the same codebase.
@@ -214,6 +214,7 @@ you use it, so upgrading does not require a fresh login.
 | `caido_list_replay_sessions` | List replay sessions |
 | `caido_delete_replay_sessions` | Bulk delete replay sessions by ID |
 | `caido_move_replay_session` | Move a session to a different collection |
+| `caido_rename_replay_session` | Rename a replay session (tab title) |
 | `caido_get_replay_entry` | Get replay entry with response. 2KB body limit default |
 | `caido_clear_session_cookies` | Wipe the in-memory cookie jar for a replay session |
 | `caido_get_session_cookies` | List metadata for cookies stored in a session jar matching a URL (values not returned) |
@@ -313,6 +314,8 @@ Read-only data exposed via the MCP resources protocol. Agents can read these wit
 | `port` | int | Target port |
 | `tls` | bool | Use HTTPS (default true) |
 | `sessionId` | string | Replay session (auto-managed if omitted) |
+| `collectionId` | string | File the request as a new session in this collection (not with `sessionId`) |
+| `name` | string | Title for that new session (not with `sessionId`) |
 | `bodyLimit` | int | Response body byte limit (default 2000) |
 | `bodyOffset` | int | Response body byte offset (default 0) |
 | `useCookieJar` | bool | Auto-inject session cookies and persist `Set-Cookie` (default true); set false to disable for this call only |

@@ -130,13 +130,65 @@ func TestSend_FallbackDeletesOrphanedDefaultSession(t *testing.T) {
 	}
 }
 
-// TestSend_FallbackKeepsUserSuppliedSession verifies that a user-supplied
-// session (cacheReplacement=false) is never deleted on the fallback path.
-func TestSend_FallbackKeepsUserSuppliedSession(t *testing.T) {
+// createVars decodes the input variable of a recorded CreateReplaySession op.
+func createVars(t *testing.T, op recordedOp) map[string]any {
+	t.Helper()
+	var vars struct {
+		Input map[string]any `json:"input"`
+	}
+	if err := json.Unmarshal(op.Vars, &vars); err != nil {
+		t.Fatalf("decode create vars %q: %v", string(op.Vars), err)
+	}
+	return vars.Input
+}
+
+// renamedTo decodes the name variable of a recorded RenameReplaySession op.
+func renamedTo(t *testing.T, op recordedOp) (id, name string) {
+	t.Helper()
+	var vars struct {
+		ID   string `json:"id"`
+		Name string `json:"name"`
+	}
+	if err := json.Unmarshal(op.Vars, &vars); err != nil {
+		t.Fatalf("decode rename vars %q: %v", string(op.Vars), err)
+	}
+	return vars.ID, vars.Name
+}
+
+// assertFiledAs checks the replacement session was created in collectionID
+// and renamed to name.
+func assertFiledAs(t *testing.T, rec *recordingHandler, newID, collectionID, name string) {
+	t.Helper()
+	op, ok := rec.find("CreateReplaySession")
+	if !ok {
+		t.Fatal("expected CreateReplaySession")
+	}
+	if got := createVars(t, op)["collectionId"]; got != collectionID {
+		t.Fatalf("want collectionId %q, got %v", collectionID, got)
+	}
+	op, ok = rec.find("RenameReplaySession")
+	if !ok {
+		t.Fatalf("expected RenameReplaySession to %q", name)
+	}
+	if id, got := renamedTo(t, op); id != newID || got != name {
+		t.Fatalf("want rename %s -> %q, got %s -> %q", newID, name, id, got)
+	}
+}
+
+// TestSend_FallbackReplacesEmptyUserSession is the regression for requests
+// sent to a session from create_replay_session landing in an unnamed session
+// in the default collection: the empty session cannot send, so the
+// replacement must inherit its collection and name, and the hollow original
+// must be deleted.
+func TestSend_FallbackReplacesEmptyUserSession(t *testing.T) {
 	client, mock, rec := newRecordingEnv(t)
 
 	mock.On("GetReplaySession", testutil.GetReplaySessionResponse("user-session", ""))
 	mock.On("CreateReplaySession", testutil.CreateReplaySessionSeededResponse("fallback-new", "entry-9"))
+	mock.On("RenameReplaySession", testutil.RenameReplaySessionResponse("fallback-new", "test-session"))
+	mock.On("DeleteReplaySessions", map[string]any{
+		"deleteReplaySessions": map[string]any{"deletedIds": []string{"user-session"}},
+	})
 	mock.On("StartReplayTask", testutil.StartReplayTaskResponse())
 
 	conn := caido.ReplayConnection{Host: "example.com", Port: 80}
@@ -150,8 +202,125 @@ func TestSend_FallbackKeepsUserSuppliedSession(t *testing.T) {
 	if res.SessionID != "fallback-new" {
 		t.Fatalf("want fallback session %q, got %q", "fallback-new", res.SessionID)
 	}
+	assertFiledAs(t, rec, "fallback-new", "col-1", "test-session")
+
+	op, ok := rec.find("DeleteReplaySessions")
+	if !ok {
+		t.Fatal("expected the empty user session to be deleted")
+	}
+	if ids := deletedIDs(t, op); len(ids) != 1 || ids[0] != "user-session" {
+		t.Fatalf("want delete ids [user-session], got %v", ids)
+	}
+}
+
+// TestSend_FallbackKeepsBusyUserSession verifies that a user-supplied
+// session with history is never deleted on the fallback path, while the
+// replacement still lands in the same collection under the same name.
+func TestSend_FallbackKeepsBusyUserSession(t *testing.T) {
+	client, mock, rec := newRecordingEnv(t)
+
+	// Session has an entry, but the draft update fails (no mock) -> fallback.
+	mock.On("GetReplaySession", testutil.GetReplaySessionResponse("user-session", "entry-1"))
+	mock.On("CreateReplaySession", testutil.CreateReplaySessionSeededResponse("fallback-new", "entry-9"))
+	mock.On("RenameReplaySession", testutil.RenameReplaySessionResponse("fallback-new", "test-session"))
+	mock.On("StartReplayTask", testutil.StartReplayTaskResponse())
+
+	conn := caido.ReplayConnection{Host: "example.com", Port: 80}
+	res, err := Send(
+		context.Background(), client, "user-session",
+		"GET / HTTP/1.1\r\nHost: example.com\r\n\r\n", conn, false,
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res.SessionID != "fallback-new" {
+		t.Fatalf("want fallback session %q, got %q", "fallback-new", res.SessionID)
+	}
+	assertFiledAs(t, rec, "fallback-new", "col-1", "test-session")
 	if _, ok := rec.find("DeleteReplaySessions"); ok {
-		t.Fatal("must not delete a user-supplied session on fallback")
+		t.Fatal("must not delete a user-supplied session that has entries")
+	}
+}
+
+// TestSend_MissingUserSessionErrors verifies that a user-supplied session
+// ID that does not exist (deleted, mistyped, or replaced by an earlier
+// fallback) is reported instead of silently filing the request in a new
+// unnamed session in the default collection.
+func TestSend_MissingUserSessionErrors(t *testing.T) {
+	client, mock, rec := newRecordingEnv(t)
+
+	mock.On("GetReplaySession", map[string]any{"replaySession": nil})
+
+	conn := caido.ReplayConnection{Host: "example.com", Port: 80}
+	_, err := Send(
+		context.Background(), client, "gone",
+		"GET / HTTP/1.1\r\nHost: example.com\r\n\r\n", conn, false,
+	)
+	if err == nil {
+		t.Fatal("want an error for a missing session, got nil")
+	}
+	if _, ok := rec.find("CreateReplaySession"); ok {
+		t.Fatal("must not create a fallback session for a missing user session")
+	}
+}
+
+// TestSend_FallbackDefaultSessionStaysUnfiled verifies the default-session
+// fallback does not rename or refile the replacement.
+func TestSend_FallbackDefaultSessionStaysUnfiled(t *testing.T) {
+	client, mock, rec := newRecordingEnv(t)
+	t.Cleanup(func() { ResetDefaultSession("") })
+
+	mock.On("GetReplaySession", testutil.GetReplaySessionResponse("default-empty", ""))
+	mock.On("CreateReplaySession", testutil.CreateReplaySessionSeededResponse("fallback-new", "entry-9"))
+	mock.On("DeleteReplaySessions", map[string]any{
+		"deleteReplaySessions": map[string]any{"deletedIds": []string{"default-empty"}},
+	})
+	mock.On("StartReplayTask", testutil.StartReplayTaskResponse())
+
+	conn := caido.ReplayConnection{Host: "example.com", Port: 80}
+	if _, err := Send(
+		context.Background(), client, "default-empty",
+		"GET / HTTP/1.1\r\nHost: example.com\r\n\r\n", conn, true,
+	); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	op, _ := rec.find("CreateReplaySession")
+	if got, ok := createVars(t, op)["collectionId"]; ok && got != nil {
+		t.Fatalf("default fallback must not set collectionId, got %v", got)
+	}
+	if _, ok := rec.find("RenameReplaySession"); ok {
+		t.Fatal("default fallback must not rename the session")
+	}
+}
+
+// TestSendNew_FilesSessionInCollection verifies SendNew creates a seeded
+// session in the given collection, titles it, and starts the task.
+func TestSendNew_FilesSessionInCollection(t *testing.T) {
+	client, mock, rec := newRecordingEnv(t)
+	mock.ValidateAgainstSchema()
+
+	mock.On("CreateReplaySession", testutil.CreateReplaySessionSeededResponse("new-1", "entry-1"))
+	mock.On("RenameReplaySession", testutil.RenameReplaySessionResponse("new-1", "IDOR - invoice"))
+	mock.On("StartReplayTask", testutil.StartReplayTaskResponse())
+
+	conn := caido.ReplayConnection{Host: "example.com", Port: 443, IsTLS: true}
+	res, err := SendNew(
+		context.Background(), client,
+		"GET / HTTP/1.1\r\nHost: example.com\r\n\r\n", conn,
+		"col-7", "IDOR - invoice",
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res.SessionID != "new-1" || res.PreviousEntryID != "" {
+		t.Fatalf("unexpected result %+v", res)
+	}
+	assertFiledAs(t, rec, "new-1", "col-7", "IDOR - invoice")
+	if _, ok := rec.find("StartReplayTask"); !ok {
+		t.Fatal("expected StartReplayTask")
+	}
+	if _, ok := rec.find("DeleteReplaySessions"); ok {
+		t.Fatal("SendNew must not delete anything")
 	}
 }
 

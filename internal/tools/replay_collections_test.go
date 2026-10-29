@@ -513,3 +513,75 @@ func TestDeleteReplaySessions(t *testing.T) {
 		})
 	}
 }
+
+func TestRenameReplaySession(t *testing.T) {
+	tests := []struct {
+		name     string
+		args     map[string]any
+		mock     map[string]any
+		wantID   string
+		wantName string
+		wantErr  bool
+	}{
+		{
+			name: "renames session",
+			args: map[string]any{"sessionId": "sess-1", "name": "Step 1 - login"},
+			mock: map[string]any{
+				"renameReplaySession": map[string]any{
+					"session": map[string]any{
+						"__typename": "ReplaySessionHttp",
+						"id":         "sess-1",
+						"name":       "Step 1 - login",
+					},
+				},
+			},
+			wantID:   "sess-1",
+			wantName: "Step 1 - login",
+		},
+		{
+			name: "nil session in payload errors",
+			args: map[string]any{"sessionId": "sess-1", "name": "x"},
+			mock: map[string]any{
+				"renameReplaySession": map[string]any{"session": nil},
+			},
+			wantErr: true,
+		},
+		{
+			name:    "graphql error surfaces as tool error",
+			args:    map[string]any{"sessionId": "sess-1", "name": "x"},
+			mock:    nil,
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			env := testutil.NewMCPTestEnv(t, func(s *mcp.Server, c *caido.Client) {
+				tools.RegisterRenameReplaySessionTool(s, c)
+			})
+			if tt.mock != nil {
+				env.Mock.On("RenameReplaySession", tt.mock)
+			}
+
+			result := env.CallTool(t, "caido_rename_replay_session", tt.args)
+
+			if tt.wantErr {
+				if !result.IsError {
+					t.Fatal("expected error result")
+				}
+				return
+			}
+			if result.IsError {
+				t.Fatalf("unexpected error: %v", result.Content)
+			}
+
+			out := testutil.UnmarshalToolResult[tools.RenameReplaySessionOutput](t, result)
+			if out.ID != tt.wantID {
+				t.Errorf("want id %q, got %q", tt.wantID, out.ID)
+			}
+			if out.Name != tt.wantName {
+				t.Errorf("want name %q, got %q", tt.wantName, out.Name)
+			}
+		})
+	}
+}

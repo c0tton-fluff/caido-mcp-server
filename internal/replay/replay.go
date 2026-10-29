@@ -69,10 +69,15 @@ type SendResult struct {
 // 0.57 flow: it updates the active entry's draft (or seeds a new session
 // with the request when the session has no entry) and starts the task.
 //
-// On a busy session (TaskInProgressUserError) it transparently creates a
-// fresh seeded session and retries once. When the default session was
-// used and replaced, the cache is updated. Returns the session ID used
-// and the previous active entry ID so callers can poll for the new entry.
+// On a busy or empty session it transparently creates a fresh seeded
+// session and retries once. When the default session was used and
+// replaced, the cache is updated. A user-supplied session's name and
+// collection carry over to the replacement, and an empty one (as left by
+// create_replay_session) is deleted so the request lands where the caller
+// put it rather than in an unnamed session in the default collection. A
+// user-supplied session that cannot be read is an error, not a fallback.
+// Returns the session ID used and the previous active entry ID so callers
+// can poll for the new entry.
 func Send(
 	ctx context.Context,
 	client *caido.Client,
@@ -82,24 +87,38 @@ func Send(
 ) (*SendResult, error) {
 	rawB64 := base64.StdEncoding.EncodeToString([]byte(rawRequest))
 
-	prevEntryID, err := sendOnSession(ctx, client, sessionID, rawB64, conn)
+	sess, prevEntryID, err := sendOnSession(ctx, client, sessionID, rawB64, conn)
 	if err == nil {
 		return &SendResult{SessionID: sessionID, PreviousEntryID: prevEntryID}, nil
 	}
-
-	// Session busy or send failed: create a fresh seeded session and retry.
-	newID, _, createErr := client.Replay.CreateSessionWithRaw(ctx, conn, rawB64)
-	if createErr != nil {
+	// A user-supplied session that cannot be read has no name or
+	// collection to carry over; a fallback would file the request as an
+	// unnamed session in the default collection. Report it instead.
+	if !cacheReplacement && sess == nil {
 		return nil, fmt.Errorf(
-			"send failed (%v) and fallback session create failed: %w",
-			err, createErr,
+			"%w; list_replay_sessions shows current IDs (a send to an "+
+				"empty session replaces it and returns the new sessionId)",
+			err,
 		)
 	}
-	if cacheReplacement {
-		// The failed session was the auto-created default (not a
-		// user-supplied one). Caido 0.57 leaves it as an empty orphan, so
-		// best-effort delete the session we are evicting from the cache to
-		// avoid leaking one replay session per process on the first send.
+
+	// Session busy or send failed: create a fresh seeded session and retry.
+	var collectionID, name string
+	if !cacheReplacement && sess != nil {
+		collectionID, name = sess.Collection.ID, sess.Name
+	}
+	newID, err2 := createSeeded(ctx, client, rawB64, conn, collectionID, name)
+	if err2 != nil {
+		return nil, fmt.Errorf(
+			"send failed (%v) and fallback session create failed: %w",
+			err, err2,
+		)
+	}
+	// The auto-created default session and an empty user-supplied one are
+	// hollow orphans in Caido 0.57 once replaced; best-effort delete them
+	// to avoid leaking a stray session per send. A user session with
+	// entries (busy) keeps its history.
+	if cacheReplacement || (sess != nil && sess.ActiveEntryID == "") {
 		if _, delErr := client.Replay.DeleteSessions(
 			ctx, []string{sessionID},
 		); delErr != nil {
@@ -109,6 +128,8 @@ func Send(
 				sessionID, delErr,
 			)
 		}
+	}
+	if cacheReplacement {
 		ResetDefaultSession(newID)
 	}
 	// The fresh session is seeded with the request; just start the task.
@@ -118,21 +139,72 @@ func Send(
 	return &SendResult{SessionID: newID, PreviousEntryID: ""}, nil
 }
 
-// sendOnSession updates the draft of the session's active entry (or seeds
-// the session if it has none) and starts the task. Returns the previous
-// active entry ID. Returns an error when the session is busy.
+// SendNew creates a fresh replay session seeded with rawRequest, places it
+// in collectionID and names it name (both optional), and starts the task.
+// This is the one-shot path for callers that want each request filed as
+// its own titled session instead of reusing the default one.
+func SendNew(
+	ctx context.Context,
+	client *caido.Client,
+	rawRequest string,
+	conn caido.ReplayConnection,
+	collectionID, name string,
+) (*SendResult, error) {
+	rawB64 := base64.StdEncoding.EncodeToString([]byte(rawRequest))
+	newID, err := createSeeded(ctx, client, rawB64, conn, collectionID, name)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := client.Replay.StartTask(ctx, newID); err != nil {
+		return nil, fmt.Errorf("start task on session %s: %w", newID, err)
+	}
+	return &SendResult{SessionID: newID, PreviousEntryID: ""}, nil
+}
+
+// createSeeded creates an HTTP replay session seeded with rawB64, in
+// collectionID when set, and renames it to name when set.
+func createSeeded(
+	ctx context.Context,
+	client *caido.Client,
+	rawB64 string,
+	conn caido.ReplayConnection,
+	collectionID, name string,
+) (string, error) {
+	input := &gen.CreateReplaySessionInput{
+		Kind:          gen.ReplaySessionKindHttp,
+		RequestSource: caido.NewRawRequestSource(conn, rawB64),
+	}
+	if collectionID != "" {
+		input.CollectionId = &collectionID
+	}
+	newID, _, err := client.Replay.CreateSession(ctx, input)
+	if err != nil {
+		return "", fmt.Errorf("create replay session: %w", err)
+	}
+	if name != "" {
+		if _, err := client.Replay.RenameSession(ctx, newID, name); err != nil {
+			return "", fmt.Errorf("rename session %s: %w", newID, err)
+		}
+	}
+	return newID, nil
+}
+
+// sendOnSession updates the draft of the session's active entry and starts
+// the task. Returns the fetched session (nil if it could not be read) and
+// the previous active entry ID. Returns an error when the session is busy
+// or has no entry to send.
 func sendOnSession(
 	ctx context.Context,
 	client *caido.Client,
 	sessionID, rawB64 string,
 	conn caido.ReplayConnection,
-) (string, error) {
+) (*caido.ReplaySession, string, error) {
 	sess, err := client.Replay.GetSession(ctx, sessionID)
 	if err != nil {
-		return "", fmt.Errorf("get session: %w", err)
+		return nil, "", fmt.Errorf("get session: %w", err)
 	}
 	if sess == nil {
-		return "", fmt.Errorf("session %s not found", sessionID)
+		return nil, "", fmt.Errorf("session %s not found", sessionID)
 	}
 
 	prevEntryID := sess.ActiveEntryID
@@ -141,23 +213,23 @@ func sendOnSession(
 		// Empty session (0.57 creates these with no entry). We cannot
 		// update a draft; the caller's session is unusable for sending.
 		// Signal failure so Send creates a fresh seeded session.
-		return "", fmt.Errorf("session %s has no entry to send", sessionID)
+		return sess, "", fmt.Errorf("session %s has no entry to send", sessionID)
 	}
 
 	if err := client.Replay.UpdateEntryDraft(
 		ctx, sess.ActiveEntryID, conn, rawB64, nil,
 	); err != nil {
-		return "", fmt.Errorf("update draft: %w", err)
+		return sess, "", fmt.Errorf("update draft: %w", err)
 	}
 
 	startResp, err := client.Replay.StartTask(ctx, sessionID)
 	if err != nil {
-		return "", fmt.Errorf("start task: %w", err)
+		return sess, "", fmt.Errorf("start task: %w", err)
 	}
 	if caido.IsTaskInProgress(startResp) {
-		return "", fmt.Errorf("task in progress on session %s", sessionID)
+		return sess, "", fmt.Errorf("task in progress on session %s", sessionID)
 	}
-	return prevEntryID, nil
+	return sess, prevEntryID, nil
 }
 
 // PollForEntry polls the session until a new active entry (different from

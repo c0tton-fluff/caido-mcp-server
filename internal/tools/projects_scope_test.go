@@ -106,6 +106,8 @@ func TestCreateProject(t *testing.T) {
 		wantID   string
 		wantName string
 		wantErr  bool
+		// wantErrText, when set, must appear in the error text.
+		wantErrText string
 	}{
 		{
 			name:  "creates project",
@@ -125,6 +127,25 @@ func TestCreateProject(t *testing.T) {
 			wantErr: true,
 		},
 		{
+			// Live Caido 0.59 refuses past the plan's project limit with a
+			// payload error, not a GraphQL error; it used to read "returned nil".
+			name:  "plan limit is explained",
+			input: map[string]any{"name": "OneTooMany"},
+			mockData: map[string]any{
+				"createProject": map[string]any{
+					"project": nil,
+					"error": map[string]any{
+						"__typename":       "PermissionDeniedUserError",
+						"code":             "PERMISSION_DENIED",
+						"permissionReason": "ENTITLEMENT",
+					},
+				},
+			},
+			doMock:      true,
+			wantErr:     true,
+			wantErrText: "project limit",
+		},
+		{
 			name:    "graphql error when create op unmocked",
 			input:   map[string]any{"name": "Boom"},
 			doMock:  false,
@@ -137,6 +158,7 @@ func TestCreateProject(t *testing.T) {
 			env := testutil.NewMCPTestEnv(t, func(s *mcp.Server, c *caido.Client) {
 				tools.RegisterCreateProjectTool(s, c)
 			})
+			env.Mock.ValidateAgainstSchema()
 			if tt.doMock {
 				env.Mock.On("CreateProject", tt.mockData)
 			}
@@ -145,6 +167,12 @@ func TestCreateProject(t *testing.T) {
 			if tt.wantErr {
 				if !result.IsError {
 					t.Fatal("expected error, got success")
+				}
+				if tt.wantErrText != "" {
+					tc, _ := result.Content[0].(*mcp.TextContent)
+					if tc == nil || !strings.Contains(tc.Text, tt.wantErrText) {
+						t.Fatalf("want error containing %q, got %+v", tt.wantErrText, result.Content)
+					}
 				}
 				return
 			}

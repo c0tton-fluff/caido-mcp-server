@@ -3,6 +3,7 @@ package tools_test
 import (
 	"encoding/base64"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/c0tton-fluff/caido-mcp-server/v4/internal/testutil"
@@ -12,7 +13,7 @@ import (
 )
 
 func pipelineCreated(id string) map[string]any {
-	return map[string]any{"createReplayPipelineHttpOneSession": map[string]any{
+	return map[string]any{"createReplayPipelineHttpSession": map[string]any{
 		"session": map[string]any{"id": id}, "error": nil,
 	}}
 }
@@ -46,7 +47,7 @@ func pipelineEntry(id string, httpEntries ...map[string]any) map[string]any {
 		httpEntries = []map[string]any{}
 	}
 	return map[string]any{"replayEntry": map[string]any{
-		"__typename": "ReplayEntryHttpOnePipeline",
+		"__typename": "ReplayEntryHttpPipeline",
 		"id":         id, "error": nil, "httpEntries": httpEntries,
 	}}
 }
@@ -74,7 +75,7 @@ func strategyOf(t *testing.T, env *testutil.MCPTestEnv) map[string]any {
 	return strategy
 }
 
-func TestRacePipeline_SinglePacketDefault(t *testing.T) {
+func TestRacePipeline_LastByteDefault(t *testing.T) {
 	env := newPipelineEnv(t)
 	env.Mock.On("CreateReplayPipelineSession", pipelineCreated("ps-1"))
 	env.Mock.On("StartReplayPipelineTask", pipelineStarted("pe-1"))
@@ -98,8 +99,8 @@ func TestRacePipeline_SinglePacketDefault(t *testing.T) {
 	if out.SessionID != "ps-1" || out.EntryID != "pe-1" || !out.Complete {
 		t.Fatalf("unexpected run header %+v", out)
 	}
-	if out.Strategy != "single-packet" {
-		t.Fatalf("want default strategy single-packet, got %q", out.Strategy)
+	if out.Strategy != "last-byte" {
+		t.Fatalf("want default strategy last-byte, got %q", out.Strategy)
 	}
 	if out.StatusCounts["200"] != 1 || out.StatusCounts["409"] != 1 {
 		t.Fatalf("want statusCounts 200:1 409:1, got %v", out.StatusCounts)
@@ -111,9 +112,9 @@ func TestRacePipeline_SinglePacketDefault(t *testing.T) {
 		t.Fatalf("result details not mapped: %+v", out.Results)
 	}
 
-	spa, _ := strategyOf(t, env)["singlePacketAttack"].(map[string]any)
-	if spa["convertToHttp2"] != true || spa["failureBehavior"] != "ABORT_ON_PARTIAL" {
-		t.Fatalf("want singlePacketAttack{convertToHttp2:true, ABORT_ON_PARTIAL}, got %v", spa)
+	lbs, _ := strategyOf(t, env)["lastByteSynchronization"].(map[string]any)
+	if lbs["failureBehavior"] != "ABORT_ON_PARTIAL" {
+		t.Fatalf("want lastByteSynchronization ABORT_ON_PARTIAL by default, got %v", lbs)
 	}
 	input, _ := env.Mock.LastVariables("CreateReplayPipelineSession")["input"].(map[string]any)
 	sources, _ := input["requestSources"].([]any)
@@ -125,7 +126,7 @@ func TestRacePipeline_SinglePacketDefault(t *testing.T) {
 	}
 }
 
-func TestRacePipeline_LastByteFiledAndNamed(t *testing.T) {
+func TestRacePipeline_SinglePacketFiledAndNamed(t *testing.T) {
 	env := newPipelineEnv(t)
 	env.Mock.On("CreateReplayPipelineSession", pipelineCreated("ps-2"))
 	env.Mock.On("RenameReplaySession", testutil.RenameReplaySessionResponse("ps-2", "Race - coupon"))
@@ -135,7 +136,7 @@ func TestRacePipeline_LastByteFiledAndNamed(t *testing.T) {
 	result := env.CallTool(t, "caido_race_pipeline", map[string]any{
 		"host": "shop.test", "tls": false,
 		"requests":      []map[string]any{{"raw": raceRaw}},
-		"strategy":      "last-byte",
+		"strategy":      "single-packet",
 		"fireOnPartial": true,
 		"collectionId":  "col-3",
 		"name":          "Race - coupon",
@@ -143,9 +144,9 @@ func TestRacePipeline_LastByteFiledAndNamed(t *testing.T) {
 	if result.IsError {
 		t.Fatalf("unexpected error: %+v", result.Content)
 	}
-	lbs, _ := strategyOf(t, env)["lastByteSynchronization"].(map[string]any)
-	if lbs["failureBehavior"] != "FIRE_ON_PARTIAL" {
-		t.Fatalf("want lastByteSynchronization FIRE_ON_PARTIAL, got %v", lbs)
+	spa, _ := strategyOf(t, env)["singlePacketAttack"].(map[string]any)
+	if spa["convertToHttp2"] != true || spa["failureBehavior"] != "FIRE_ON_PARTIAL" {
+		t.Fatalf("want singlePacketAttack{convertToHttp2:true, FIRE_ON_PARTIAL}, got %v", spa)
 	}
 	input, _ := env.Mock.LastVariables("CreateReplayPipelineSession")["input"].(map[string]any)
 	if input["collectionId"] != "col-3" {
@@ -230,7 +231,7 @@ func TestRacePipeline_Errors(t *testing.T) {
 			args: map[string]any{"host": "shop.test", "requests": []map[string]any{{"raw": raceRaw}}},
 			mock: func(env *testutil.MCPTestEnv) {
 				env.Mock.On("CreateReplayPipelineSession", map[string]any{
-					"createReplayPipelineHttpOneSession": map[string]any{
+					"createReplayPipelineHttpSession": map[string]any{
 						"session": nil,
 						"error":   map[string]any{"__typename": "OtherUserError", "code": "boom"},
 					},
@@ -262,5 +263,53 @@ func TestRacePipeline_Errors(t *testing.T) {
 				t.Fatalf("expected error result, got %+v", result.Content)
 			}
 		})
+	}
+}
+
+// Live 0.59.0: without the v2 network stack Caido fails every request of a
+// single-packet run; the per-request error must reach the caller.
+func TestRacePipeline_PerRequestErrorsSurface(t *testing.T) {
+	env := newPipelineEnv(t)
+	env.Mock.On("CreateReplayPipelineSession", pipelineCreated("ps-6"))
+	env.Mock.On("StartReplayPipelineTask", pipelineStarted("pe-6"))
+	failed := pipelineHTTPEntry("h1", 0, "")
+	failed["error"] = "single packet attack requires the v2 network stack"
+	entry := pipelineEntry("pe-6", failed)
+	entry["replayEntry"].(map[string]any)["error"] = "One or more requests in this pipeline failed"
+	env.Mock.On("GetReplayPipelineEntry", entry)
+
+	result := env.CallTool(t, "caido_race_pipeline", map[string]any{
+		"host": "shop.test", "strategy": "single-packet",
+		"requests": []map[string]any{{"raw": raceRaw}},
+	})
+	if result.IsError {
+		t.Fatalf("a run with failed requests is a result, not a tool error: %+v", result.Content)
+	}
+	out := testutil.UnmarshalToolResult[tools.RacePipelineOutput](t, result)
+	if !out.Complete || out.Error == "" || out.StatusCounts["error"] != 1 ||
+		!strings.Contains(out.Results[0].Error, "v2 network stack") {
+		t.Fatalf("want the per-request error surfaced, got %+v", out)
+	}
+}
+
+// Live 0.59.0: the plan caps how many pipeline sessions may exist.
+func TestRacePipeline_EntitlementExplained(t *testing.T) {
+	env := newPipelineEnv(t)
+	env.Mock.On("CreateReplayPipelineSession", map[string]any{
+		"createReplayPipelineHttpSession": map[string]any{
+			"session": nil,
+			"error": map[string]any{
+				"__typename":       "PermissionDeniedUserError",
+				"code":             "PERMISSION_DENIED",
+				"permissionReason": "ENTITLEMENT",
+			},
+		},
+	})
+	result := env.CallTool(t, "caido_race_pipeline", map[string]any{
+		"host": "shop.test", "requests": []map[string]any{{"raw": raceRaw}},
+	})
+	tc, _ := result.Content[0].(*mcp.TextContent)
+	if !result.IsError || tc == nil || !strings.Contains(tc.Text, "limit on pipeline sessions") {
+		t.Fatalf("want an entitlement explanation, got %+v", result.Content)
 	}
 }

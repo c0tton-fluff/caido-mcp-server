@@ -10,10 +10,10 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-func passthroughWire(outOfScope bool, allow, deny []string) map[string]any {
-	return map[string]any{"passthroughOptions": map[string]any{
-		"allowlist": allow, "denylist": deny, "outOfScope": outOfScope,
-	}}
+func passthroughWire(capture, pass []string, outOfScope bool) map[string]any {
+	return map[string]any{
+		"captureList": capture, "passthroughList": pass, "outOfScope": outOfScope,
+	}
 }
 
 func newPassthroughEnv(t *testing.T) *testutil.MCPTestEnv {
@@ -28,7 +28,7 @@ func newPassthroughEnv(t *testing.T) *testutil.MCPTestEnv {
 func TestPassthroughOptions_ReadOnly(t *testing.T) {
 	env := newPassthroughEnv(t)
 	env.Mock.On("GetPassthroughOptions", map[string]any{
-		"passthroughOptions": passthroughWire(false, []string{"*.okta.com"}, nil),
+		"passthroughOptions": passthroughWire([]string{}, []string{"*.okta.com"}, false),
 	})
 	result := env.CallTool(t, "caido_passthrough_options", map[string]any{})
 	if result.IsError {
@@ -36,8 +36,7 @@ func TestPassthroughOptions_ReadOnly(t *testing.T) {
 	}
 	out := testutil.UnmarshalToolResult[tools.PassthroughOutput](t, result)
 	if out.Changed || out.Options.OutOfScope ||
-		!reflect.DeepEqual(out.Options.Allowlist, []string{"*.okta.com"}) ||
-		out.Options.Denylist == nil {
+		!reflect.DeepEqual(out.Options.PassthroughList, []string{"*.okta.com"}) {
 		t.Fatalf("unexpected read %+v", out)
 	}
 	if env.Mock.LastVariables("SetPassthroughOptions") != nil {
@@ -45,13 +44,15 @@ func TestPassthroughOptions_ReadOnly(t *testing.T) {
 	}
 }
 
+// The set mutation requires every field, so an update must send back the
+// fields the caller omitted, captureList included.
 func TestPassthroughOptions_UpdateKeepsOmittedFields(t *testing.T) {
 	env := newPassthroughEnv(t)
 	env.Mock.On("GetPassthroughOptions", map[string]any{
-		"passthroughOptions": passthroughWire(false, []string{"*.okta.com"}, []string{"api.test"}),
+		"passthroughOptions": passthroughWire([]string{"api.test"}, []string{"*.okta.com"}, false),
 	})
 	env.Mock.On("SetPassthroughOptions", map[string]any{"setPassthroughOptions": map[string]any{
-		"options": passthroughWire(true, []string{"*.okta.com"}, []string{"api.test"}),
+		"options": passthroughWire([]string{"api.test"}, []string{"*.okta.com"}, true),
 	}})
 	result := env.CallTool(t, "caido_passthrough_options", map[string]any{"outOfScope": true})
 	if result.IsError {
@@ -62,29 +63,32 @@ func TestPassthroughOptions_UpdateKeepsOmittedFields(t *testing.T) {
 		t.Fatalf("want changed outOfScope=true, got %+v", out)
 	}
 	input, _ := env.Mock.LastVariables("SetPassthroughOptions")["input"].(map[string]any)
-	targets, _ := input["targets"].(map[string]any)
-	if input["outofscope"] != true ||
-		!reflect.DeepEqual(targets["allowlist"], []any{"*.okta.com"}) ||
-		!reflect.DeepEqual(targets["denylist"], []any{"api.test"}) {
-		t.Fatalf("omitted lists must be sent back unchanged, got %v", input)
+	if input["outOfScope"] != true ||
+		!reflect.DeepEqual(input["passthroughList"], []any{"*.okta.com"}) ||
+		!reflect.DeepEqual(input["captureList"], []any{"api.test"}) {
+		t.Fatalf("omitted fields must be sent back unchanged, got %v", input)
 	}
 }
 
 func TestPassthroughOptions_EmptyListClears(t *testing.T) {
 	env := newPassthroughEnv(t)
 	env.Mock.On("GetPassthroughOptions", map[string]any{
-		"passthroughOptions": passthroughWire(true, []string{"*.okta.com"}, nil),
+		"passthroughOptions": passthroughWire(nil, []string{"*.okta.com"}, true),
 	})
 	env.Mock.On("SetPassthroughOptions", map[string]any{"setPassthroughOptions": map[string]any{
-		"options": passthroughWire(true, nil, nil),
+		"options": passthroughWire([]string{}, []string{}, true),
 	}})
-	result := env.CallTool(t, "caido_passthrough_options", map[string]any{"allowlist": []string{}})
+	result := env.CallTool(t, "caido_passthrough_options", map[string]any{"passthroughList": []string{}})
 	if result.IsError {
 		t.Fatalf("unexpected error: %+v", result.Content)
 	}
 	input, _ := env.Mock.LastVariables("SetPassthroughOptions")["input"].(map[string]any)
-	targets, _ := input["targets"].(map[string]any)
-	if got, ok := targets["allowlist"].([]any); !ok || len(got) != 0 {
-		t.Fatalf("want allowlist cleared to [], got %#v", targets["allowlist"])
+	if got, ok := input["passthroughList"].([]any); !ok || len(got) != 0 {
+		t.Fatalf("want passthroughList cleared to [], got %#v", input["passthroughList"])
+	}
+	// A null captureList read back must go out as [], not null: the
+	// input field is a non-null list.
+	if got, ok := input["captureList"].([]any); !ok || len(got) != 0 {
+		t.Fatalf("want captureList sent as [], got %#v", input["captureList"])
 	}
 }

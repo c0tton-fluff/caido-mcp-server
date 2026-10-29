@@ -334,7 +334,7 @@ Read-only data exposed via the MCP resources protocol. Agents can read these wit
 | `port` | int | Target port (default 443 with TLS, 80 without) |
 | `tls` | bool | Use TLS (default true) |
 | `requests` | array | 1..50 `{label, raw}` requests; repeat one request N times to race it (required) |
-| `strategy` | string | `single-packet` (default; needs Caido's HTTP/2 stack), `last-byte`, or `sequential` |
+| `strategy` | string | `last-byte` (default), `single-packet` (needs Caido's experimental v2 network stack), or `sequential` |
 | `convertToHttp2` | bool | single-packet: send over one HTTP/2 connection (default true) |
 | `fireOnPartial` | bool | single-packet/last-byte: release the requests that prepared even if some failed (default false) |
 | `abortOnFailure` | bool | sequential: stop at the first failure |

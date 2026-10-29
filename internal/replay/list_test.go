@@ -14,7 +14,7 @@ func TestExplainUnsupportedKind(t *testing.T) {
 	if got := ExplainUnsupportedKind(other, "replay session", "1"); got != other {
 		t.Fatalf("unrelated error must pass through unchanged, got %v", got)
 	}
-	sdk := errors.New(`unexpected concrete type for GetReplaySessionReplaySession: "ReplaySessionHttpOnePipeline"`)
+	sdk := errors.New(`unexpected concrete type for GetReplaySessionReplaySession: "ReplaySessionHttpPipeline"`)
 	got := ExplainUnsupportedKind(sdk, "replay session", "42")
 	if !errors.Is(got, sdk) {
 		t.Fatal("explained error must wrap the original")

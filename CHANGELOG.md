@@ -5,10 +5,10 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Changed
-- **Test mocks validate against the Caido 0.59.0 server schema** (vendored from `caido/schemas`) instead of the older copy bundled with sdk-go, and `TestSDKOperationsMatchSchema` fails if a Caido release breaks an sdk-go operation.
+- **Test mocks validate against the Caido 0.59.0 server schema** instead of the older copy bundled with sdk-go, and `TestSDKOperationsMatchSchema` fails if a Caido release breaks an sdk-go operation. The schema is introspected from a live 0.59.0 server by `scripts/caido-schema-sdl.py`: the file `caido/schemas` publishes for 0.59.0 does not match the released server (`HttpOnePipeline` vs `HttpPipeline`, `allowlist`/`denylist` vs `captureList`/`passthroughList`).
 
 ### Added
-- **`caido_race_pipeline`** - race-condition testing through Caido Replay Pipelines (Caido 0.59+): single-packet attack (HTTP/2), last-byte synchronization or sequential, with the run filed as a Replay session and every request in history. Returns a status-code tally (`statusCounts`) and per-request results. `caido_race_window_send` stays for older Caido and raw-socket control.
+- **`caido_race_pipeline`** - race-condition testing through Caido Replay Pipelines (Caido 0.59+): last-byte synchronization (default), single-packet attack (needs Caido's v2 network stack) or sequential, with the run filed as a Replay session and every request in history. Returns a status-code tally (`statusCounts`) and per-request results. `caido_race_window_send` stays for older Caido and raw-socket control.
 - **`caido_passthrough_options`** - read or update Caido 0.59 pass-through options (tunnel traffic without recording it; `outOfScope` keeps history to in-scope requests). Omitted fields are left unchanged.
 - **`caido_send_request` accepts `curl`** - paste a cURL command (bash form, as from a browser's "Copy as cURL") instead of `raw`; host, port and TLS come from its URL. Unsupported options (multipart `-F`, `@file` bodies, unknown flags) are rejected instead of silently dropped.
 - **HTTPQL `header`/`body` fields** documented in `caido_list_requests` (Caido 0.58+), so agents match headers and bodies directly instead of scanning `raw`.
@@ -16,6 +16,9 @@ All notable changes to this project will be documented in this file.
 - **`caido_rename_replay_session`** - retitle a replay session, e.g. one already filed under its numeric ID.
 
 ### Fixed
+- **`caido_rename_replay_session` and `caido_move_replay_session` failed on Pipeline sessions.** Same sdk-go decoder limit as the list tools; both now use tolerant mutations. Found on a live 0.59.0 server, where renaming a new pipeline session failed even though Caido had applied it.
+- **`caido_create_project` reported `create project returned nil` when Caido refused.** It now says why, e.g. `PermissionDeniedUserError (ENTITLEMENT): the Caido plan's project limit is reached`.
+- **`caido_create_replay_session` left an unnamed session behind when the rename failed.** It is now deleted before the error is returned.
 - **Request bodies were altered before sending.** `NormalizeCRLF` rewrote the whole message: it appended `\r\n\r\n` after any body that did not already end that way (so `qty=2` went out as `qty=2\r\n\r\n`, 4 bytes past `Content-Length`) and turned every bare LF inside the body into CRLF (JSON, multipart, binary). Only the request line and headers are normalized now; the body is sent byte for byte. Affects `caido_send_request`, `caido_edit_request`, `caido_batch_send`, `caido_race_window_send` and the CLI.
 - **`caido_list_replay_sessions` and `caido_list_replay_collections` failed outright once a project held a Caido Pipeline session (0.58+).** The sdk-go decoders reject session kinds they were not generated for. Both tools now use tolerant queries that page through every result, and sessions report a `kind` (`http`, `ws`, `pipeline`) plus their collection. Reading a pipeline session or entry through the other tools now says what it is instead of surfacing the raw decoder error.
 - **Requests sent to a session from `caido_create_replay_session` ended up in an unnamed session in the default collection.** Caido 0.57 creates such sessions with no entry, so the send fell back to a brand-new session that dropped the name and collection and left the named session empty. The replacement session now inherits the original's collection and name, and the empty original is deleted. The same applies to `caido_edit_request`.

@@ -18,16 +18,19 @@ import (
 // maps because genqlient drops @oneOf members incorrectly (see
 // create_tamper_rule.go).
 
-// Pipeline strategies accepted by RunPipeline.
+// Pipeline strategies accepted by RunPipeline. last-byte is the default
+// because it works on a stock Caido; single-packet needs the experimental
+// v2 (HTTP/2) network stack, and without it every request fails with
+// "single packet attack requires the v2 network stack".
 const (
-	StrategySinglePacket = "single-packet"
 	StrategyLastByte     = "last-byte"
+	StrategySinglePacket = "single-packet"
 	StrategySequential   = "sequential"
 )
 
 // PipelineStrategies lists the accepted strategies, default first.
 var PipelineStrategies = []string{
-	StrategySinglePacket, StrategyLastByte, StrategySequential,
+	StrategyLastByte, StrategySinglePacket, StrategySequential,
 }
 
 const (
@@ -36,9 +39,14 @@ const (
 )
 
 const createPipelineMutation = `mutation CreateReplayPipelineSession($input: CreateReplayPipelineSessionInput!) {
-  createReplayPipelineHttpOneSession(input: $input) {
+  createReplayPipelineHttpSession(input: $input) {
     session { id }
-    error { __typename ... on UserError { code } }
+    error {
+      __typename
+      ... on UserError { code }
+      ... on PermissionDeniedUserError { permissionReason: reason }
+      ... on CloudUserError { cloudReason: reason }
+    }
   }
 }`
 
@@ -50,10 +58,10 @@ const startPipelineMutation = `mutation StartReplayPipelineTask($sessionId: ID!)
 }`
 
 const getPipelineEntryQuery = `query GetReplayPipelineEntry($id: ID!) {
-  replayEntry(id: $id, sessionKind: HTTP_ONE_PIPELINE) {
+  replayEntry(id: $id, sessionKind: HTTP_PIPELINE) {
     id
     error
-    ... on ReplayEntryHttpOnePipeline {
+    ... on ReplayEntryHttpPipeline {
       httpEntries {
         id
         error
@@ -74,7 +82,7 @@ type PipelineRequest struct {
 
 // PipelineOptions configures a pipeline run.
 type PipelineOptions struct {
-	Strategy string // one of PipelineStrategies; empty = single-packet
+	Strategy string // one of PipelineStrategies; empty = last-byte
 	// ConvertToHTTP2 applies to single-packet: send the HTTP/1 requests over
 	// one HTTP/2 connection (the classic single-packet attack).
 	ConvertToHTTP2 bool
@@ -119,11 +127,11 @@ func strategyInput(o PipelineOptions) (map[string]any, error) {
 		failure = "FIRE_ON_PARTIAL"
 	}
 	switch o.Strategy {
-	case "", StrategySinglePacket:
+	case StrategySinglePacket:
 		return map[string]any{"singlePacketAttack": map[string]any{
 			"convertToHttp2": o.ConvertToHTTP2, "failureBehavior": failure,
 		}}, nil
-	case StrategyLastByte:
+	case "", StrategyLastByte:
 		return map[string]any{"lastByteSynchronization": map[string]any{
 			"failureBehavior": failure,
 		}}, nil
@@ -138,15 +146,28 @@ func strategyInput(o PipelineOptions) (map[string]any, error) {
 }
 
 type userErrorRef struct {
-	Typename string `json:"__typename"`
-	Code     string `json:"code"`
+	Typename         string `json:"__typename"`
+	Code             string `json:"code"`
+	PermissionReason string `json:"permissionReason"`
+	CloudReason      string `json:"cloudReason"`
 }
 
 func (e *userErrorRef) String() string {
+	msg := e.Typename
 	if e.Code != "" {
-		return e.Typename + ": " + e.Code
+		msg += ": " + e.Code
 	}
-	return e.Typename
+	if reason := e.PermissionReason + e.CloudReason; reason != "" {
+		msg += " (" + reason + ")"
+	}
+	if e.PermissionReason == "ENTITLEMENT" {
+		// Seen live on 0.59.0: the plan caps how many pipeline sessions
+		// may exist; deleting one let the next create succeed.
+		msg += "; the Caido plan's limit on pipeline sessions is reached, " +
+			"delete an old pipeline session (caido_list_replay_sessions, " +
+			"kind pipeline) or upgrade the plan"
+	}
+	return msg
 }
 
 // RunPipeline creates a pipeline session holding reqs, optionally files and
@@ -181,12 +202,12 @@ func RunPipeline(
 	}
 
 	var created struct {
-		CreateReplayPipelineHttpOneSession struct {
+		CreateReplayPipelineHttpSession struct {
 			Session *struct {
 				ID string `json:"id"`
 			} `json:"session"`
 			Error *userErrorRef `json:"error"`
-		} `json:"createReplayPipelineHttpOneSession"`
+		} `json:"createReplayPipelineHttpSession"`
 	}
 	if err := client.GraphQL.MakeRequest(ctx, &gql.Request{
 		OpName:    "CreateReplayPipelineSession",
@@ -197,7 +218,7 @@ func RunPipeline(
 			"create pipeline session (needs Caido 0.59+): %w", err,
 		)
 	}
-	payload := created.CreateReplayPipelineHttpOneSession
+	payload := created.CreateReplayPipelineHttpSession
 	if payload.Error != nil {
 		return nil, fmt.Errorf("create pipeline session: %s", payload.Error)
 	}
@@ -207,7 +228,7 @@ func RunPipeline(
 	sessionID := payload.Session.ID
 
 	if opts.Name != "" {
-		if _, err := client.Replay.RenameSession(ctx, sessionID, opts.Name); err != nil {
+		if _, _, err := RenameSession(ctx, client, sessionID, opts.Name); err != nil {
 			// Nothing has been sent yet; do not leave an unnamed session.
 			if _, delErr := client.Replay.DeleteSessions(
 				ctx, []string{sessionID},

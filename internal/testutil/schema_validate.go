@@ -24,14 +24,15 @@ import (
 //	Invalid value for argument "input.section.requestMethod.operation.update",
 //	unknown field "matcher" of type "TamperOperationMethodUpdateInput"
 //
-// The schema is the published Caido proxy schema (caido/schemas,
-// schemas/proxy/schema.graphql) for the server version this repo targets,
-// vendored here because sdk-go lags the server: its bundled schema stops at
-// 0.58.0 and has no Pipeline sessions. Validating against the server's
-// schema is what matters, since the server is what rejects a bad call.
+// The schema is introspected from a live Caido server of the version this
+// repo targets (scripts/caido-schema-sdl.py) and vendored here. sdk-go's
+// bundled copy lags the server, and the caido/schemas file published for
+// 0.59.0 does not match the released 0.59.0 server (HttpOnePipeline vs
+// HttpPipeline, allowlist/denylist vs captureList/passthroughList), so
+// neither is a safe oracle; the server is what rejects a bad call.
 // TestSDKOperationsMatchSchema keeps the generated sdk-go operations honest
-// against the same file, so a server change that breaks them fails here.
-// To bump: replace the file and CaidoSchemaVersion together.
+// against the same file. To bump: regenerate the file against the new
+// server and update CaidoSchemaVersion with it.
 
 // CaidoSchemaVersion is the Caido release the vendored schema comes from.
 const CaidoSchemaVersion = "0.59.0"

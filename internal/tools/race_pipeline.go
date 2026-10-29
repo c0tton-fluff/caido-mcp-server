@@ -28,7 +28,7 @@ type RacePipelineInput struct {
 	Port           int                `json:"port,omitempty" jsonschema:"Target port (default 443 with TLS, 80 without)"`
 	TLS            *bool              `json:"tls,omitempty" jsonschema:"Use TLS (default true)"`
 	Requests       []RaceRequestInput `json:"requests" jsonschema:"required,Raw HTTP/1.1 requests to run together (1..50). Repeat one request N times to race it."`
-	Strategy       string             `json:"strategy,omitempty" jsonschema:"single-packet (default): one HTTP/2 packet releases every request; last-byte: hold each final byte and release together; sequential: one after another"`
+	Strategy       string             `json:"strategy,omitempty" jsonschema:"last-byte (default): hold each final byte and release together; single-packet: one HTTP/2 packet releases every request (needs Caido's v2 network stack); sequential: one after another"`
 	ConvertToHTTP2 *bool              `json:"convertToHttp2,omitempty" jsonschema:"single-packet only: send the HTTP/1 requests over one HTTP/2 connection (default true)"`
 	FireOnPartial  bool               `json:"fireOnPartial,omitempty" jsonschema:"single-packet/last-byte: still release the requests that prepared when some failed (default false: abort the run)"`
 	AbortOnFailure bool               `json:"abortOnFailure,omitempty" jsonschema:"sequential only: stop at the first failed request"`
@@ -84,7 +84,7 @@ func buildRacePipeline(input RacePipelineInput) ([]replay.PipelineRequest, repla
 	}
 	strategy := input.Strategy
 	if strategy == "" {
-		strategy = replay.StrategySinglePacket
+		strategy = replay.StrategyLastByte
 	}
 	if !slices.Contains(replay.PipelineStrategies, strategy) {
 		return nil, opts, fmt.Errorf(
@@ -219,11 +219,11 @@ func RegisterRacePipelineTool(
 		Description: `Race-condition test through Caido itself (needs Caido 0.59+): creates a Replay Pipeline session holding the requests and runs them with a synchronized strategy. ` +
 			`Requests go through the proxy and appear in Caido history and Replay, unlike caido_race_window_send. ` +
 			`Returns per-request status/timing/body and statusCounts (e.g. {"200":2,"409":18} means two requests won the race). ` +
-			`single-packet needs Caido's HTTP/2 stack (Settings > Network > HTTP Stack); use last-byte otherwise.`,
+			`single-packet needs Caido's experimental v2 network stack (Settings > Network > HTTP Stack); without it each request reports that error.`,
 		InputSchema: schemaFor[RacePipelineInput](func(s *jsonschema.Schema) {
 			if p := prop(s, "strategy"); p != nil {
 				p.Enum = []any{
-					replay.StrategySinglePacket, replay.StrategyLastByte, replay.StrategySequential,
+					replay.StrategyLastByte, replay.StrategySinglePacket, replay.StrategySequential,
 				}
 			}
 			if p := prop(s, "host"); p != nil {

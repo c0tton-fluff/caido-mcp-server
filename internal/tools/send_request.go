@@ -67,6 +67,23 @@ func cookiesToNames(cookies []*http.Cookie) []string {
 	return names
 }
 
+// carryOverSession moves per-session state (cookie jar, response-diff
+// digest) to the replacement when Send's fallback replaced oldID, so an
+// authenticated jar and the diff baseline survive. The old entries are
+// dropped only when Send deleted the old session; a kept (busy) session
+// still owns them.
+func carryOverSession(oldID string, res *replay.SendResult) {
+	if oldID == "" || res.SessionID == oldID {
+		return
+	}
+	replay.DefaultCookieStore().Copy(oldID, res.SessionID)
+	httputil.GlobalResponseCache().Copy(oldID, res.SessionID)
+	if res.DeletedOriginal {
+		replay.DefaultCookieStore().Clear(oldID)
+		httputil.GlobalResponseCache().Clear(oldID)
+	}
+}
+
 // sendRequestHandler creates the handler function
 func sendRequestHandler(
 	client *caido.Client,
@@ -150,10 +167,13 @@ func sendRequestHandler(
 		jarStatus := &CookieJarStatus{Enabled: useJar}
 		reqURL := httputil.RequestURL(host, port, useTLS, raw)
 
+		if useJar && httputil.HasHeader(raw, "Cookie") {
+			jarStatus.Skipped = "explicit Cookie header preserved"
+		} else if useJar && newSession {
+			jarStatus.Skipped = "new session (empty jar)"
+		}
 		if useJar && !newSession {
-			if httputil.HasHeader(raw, "Cookie") {
-				jarStatus.Skipped = "explicit Cookie header preserved"
-			} else {
+			if !httputil.HasHeader(raw, "Cookie") {
 				cookies := replay.DefaultCookieStore().Cookies(sessionID, reqURL)
 				if len(cookies) > 0 {
 					raw = httputil.InjectHeader(
@@ -184,6 +204,7 @@ func sendRequestHandler(
 				"failed to send request: %w", err,
 			)
 		}
+		carryOverSession(sessionID, sendRes)
 		sessionID = sendRes.SessionID
 
 		output := SendRequestOutput{

@@ -8,7 +8,9 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strconv"
+	"sync"
 	"testing"
+	"time"
 )
 
 // targetFromURL parses an httptest.Server URL into a non-TLS Target.
@@ -194,5 +196,80 @@ func TestParseStatus(t *testing.T) {
 		if got := parseStatus(line); got != want {
 			t.Errorf("parseStatus(%q) = %d, want %d", line, got, want)
 		}
+	}
+}
+
+// silentListener accepts connections and never reads or writes, holding them
+// open until the test ends.
+func silentListener(t *testing.T) Target {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	var mu sync.Mutex
+	var held []net.Conn
+	go func() {
+		for {
+			c, aerr := ln.Accept()
+			if aerr != nil {
+				return
+			}
+			mu.Lock()
+			held = append(held, c)
+			mu.Unlock()
+		}
+	}()
+	t.Cleanup(func() {
+		_ = ln.Close()
+		mu.Lock()
+		defer mu.Unlock()
+		for _, c := range held {
+			_ = c.Close()
+		}
+	})
+	return targetFromURL(t, "http://"+ln.Addr().String())
+}
+
+// TestSendContextCancelStopsRead verifies a cancelled ctx unblocks a response
+// read from a peer that never answers, instead of waiting out dialTimeout.
+func TestSendContextCancelStopsRead(t *testing.T) {
+	target := silentListener(t)
+	reqs := []Request{
+		{Label: "a", Raw: "GET / HTTP/1.1\r\nHost: x\r\n\r\n"},
+		{Label: "b", Raw: "GET / HTTP/1.1\r\nHost: x\r\n\r\n"},
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+
+	start := time.Now()
+	results := Send(ctx, target, reqs, 0)
+	if elapsed := time.Since(start); elapsed > 3*time.Second {
+		t.Fatalf("Send ignored ctx cancellation: took %v (want well under %v)", elapsed, dialTimeout)
+	}
+	for _, r := range results {
+		if r.Error == "" {
+			t.Errorf("%s: want an error after cancellation, got none", r.Label)
+		}
+	}
+}
+
+// TestSendContextCancelStopsTLSHandshake verifies the TLS dial honours ctx: a
+// peer that accepts but never completes the handshake must not hold Send for
+// dialTimeout once ctx is cancelled.
+func TestSendContextCancelStopsTLSHandshake(t *testing.T) {
+	target := silentListener(t)
+	target.TLS = true
+	reqs := []Request{{Label: "tls", Raw: "GET / HTTP/1.1\r\nHost: x\r\n\r\n"}}
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+
+	start := time.Now()
+	results := Send(ctx, target, reqs, 0)
+	if elapsed := time.Since(start); elapsed > 3*time.Second {
+		t.Fatalf("TLS dial ignored ctx cancellation: took %v", elapsed)
+	}
+	if results[0].Error == "" {
+		t.Fatal("want a dial error after cancellation")
 	}
 }

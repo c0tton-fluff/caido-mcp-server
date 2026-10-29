@@ -123,6 +123,8 @@ var allTools = []registerFunc{
 
 	// Race-condition testing (bypasses Caido proxy)
 	RegisterRaceWindowSendTool,
+	RegisterRacePipelineTool,
+	RegisterPassthroughTool,
 }
 
 // RegisterAll registers every tool on the server and returns the number

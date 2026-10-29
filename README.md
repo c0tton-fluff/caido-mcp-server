@@ -292,7 +292,7 @@ Read-only data exposed via the MCP resources protocol. Agents can read these wit
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `httpql` | string | HTTPQL filter query |
+| `httpql` | string | HTTPQL filter query (Caido 0.58+: `req.header["Name"].cont:"x"`, `resp.body.cont:"x"`) |
 | `limit` | int | Max requests (default 20, max 100) |
 | `after` | string | Pagination cursor |
 

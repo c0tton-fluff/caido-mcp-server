@@ -202,6 +202,7 @@ func editRequestHandler(
 				"failed to send request: %w", err,
 			)
 		}
+		carryOverSession(sessionID, sendRes)
 		sessionID = sendRes.SessionID
 
 		output := SendRequestOutput{SessionID: sessionID}
@@ -256,8 +257,13 @@ func editRequestHandler(
 					if diff != nil {
 						output.Diff = diff
 						if diff.Same {
+							// The digest hashes status + body only, so "Same"
+							// proves the BODY repeated, not the headers. Clear
+							// the (large) body to save context, but keep headers
+							// -- a header can appear or change on a byte-identical
+							// body and is exactly the signal a body-only dedup
+							// must not hide (same as send_request).
 							output.Response.Body = ""
-							output.Response.Headers = nil
 						}
 					}
 				}

@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/c0tton-fluff/caido-mcp-server/v4/internal/httputil"
 	"github.com/c0tton-fluff/caido-mcp-server/v4/internal/replay"
 	"github.com/c0tton-fluff/caido-mcp-server/v4/internal/testutil"
 	caido "github.com/caido-community/sdk-go"
@@ -239,5 +240,45 @@ func TestEditRequestHandler(t *testing.T) {
 	}
 	if output.StatusCode != 200 {
 		t.Errorf("StatusCode = %d, want 200", output.StatusCode)
+	}
+}
+
+// TestEditRequestIdenticalBodyKeepsHeaders verifies a byte-identical body
+// dedup clears only the body: headers can change on an identical body and
+// must stay visible (same rule as send_request).
+func TestEditRequestIdenticalBodyKeepsHeaders(t *testing.T) {
+	replay.ResetDefaultSession("")
+	t.Cleanup(func() { replay.ResetDefaultSession("") })
+	httputil.GlobalResponseCache().Clear("dup-sess")
+	t.Cleanup(func() { httputil.GlobalResponseCache().Clear("dup-sess") })
+
+	env := testutil.NewMCPTestEnv(t, func(s *mcp.Server, c *caido.Client) {
+		RegisterEditRequestTool(s, c)
+	})
+	env.Mock.On("GetRequest", testutil.GetRequestFullResponse("req-src", "original body"))
+	env.Mock.On("GetReplaySession", testutil.GetReplaySessionResponse("dup-sess", "e1"))
+	env.Mock.On("UpdateReplayEntryDraft", testutil.UpdateReplayEntryDraftResponse("e1"))
+	env.Mock.On("StartReplayTask", testutil.StartReplayTaskResponse())
+	env.Mock.On("GetReplaySession", testutil.GetReplaySessionResponse("dup-sess", "e2"))
+	env.Mock.On("GetReplayEntry", testutil.GetReplayEntryResponse("e2", "r2", 200, "same body"))
+
+	args := map[string]any{"requestId": "req-src", "sessionId": "dup-sess"}
+	first := testutil.UnmarshalToolResult[SendRequestOutput](t, env.CallTool(t, "caido_edit_request", args))
+	if first.Response == nil || first.Response.Body == "" {
+		t.Fatalf("first response should carry its body, got %+v", first.Response)
+	}
+
+	env.Mock.On("GetReplaySession", testutil.GetReplaySessionResponse("dup-sess", "e2"))
+	env.Mock.On("GetReplaySession", testutil.GetReplaySessionResponse("dup-sess", "e3"))
+	env.Mock.On("GetReplayEntry", testutil.GetReplayEntryResponse("e3", "r3", 200, "same body"))
+	second := testutil.UnmarshalToolResult[SendRequestOutput](t, env.CallTool(t, "caido_edit_request", args))
+	if second.Diff == nil || !second.Diff.Same {
+		t.Fatalf("want an identical-body diff, got %+v", second.Diff)
+	}
+	if second.Response.Body != "" {
+		t.Errorf("identical body should be cleared, got %q", second.Response.Body)
+	}
+	if len(second.Response.Headers) == 0 {
+		t.Error("headers must be kept on a body-identical diff")
 	}
 }

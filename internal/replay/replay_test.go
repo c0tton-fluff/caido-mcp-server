@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -379,5 +380,144 @@ func TestConstants(t *testing.T) {
 		t.Fatalf(
 			"expected PollMaxRetries 20, got %d", PollMaxRetries,
 		)
+	}
+}
+
+// TestSend_RenameFailureDeletesNewSession verifies that when the replacement
+// session is created but cannot be renamed, the half-built session is
+// deleted instead of leaking, and the error is still returned.
+func TestSend_RenameFailureDeletesNewSession(t *testing.T) {
+	client, mock, rec := newRecordingEnv(t)
+
+	// Empty user session with a name -> fallback must rename; no rename mock.
+	mock.On("GetReplaySession", testutil.GetReplaySessionResponse("user-session", ""))
+	mock.On("CreateReplaySession", testutil.CreateReplaySessionSeededResponse("fallback-new", "entry-9"))
+	mock.On("DeleteReplaySessions", map[string]any{
+		"deleteReplaySessions": map[string]any{"deletedIds": []string{"fallback-new"}},
+	})
+
+	conn := caido.ReplayConnection{Host: "example.com", Port: 80}
+	_, err := Send(
+		context.Background(), client, "user-session",
+		"GET / HTTP/1.1\r\nHost: example.com\r\n\r\n", conn, false,
+	)
+	if err == nil {
+		t.Fatal("want an error when rename fails")
+	}
+	op, ok := rec.find("DeleteReplaySessions")
+	if !ok {
+		t.Fatal("expected the unrenamed new session to be deleted")
+	}
+	if ids := deletedIDs(t, op); len(ids) != 1 || ids[0] != "fallback-new" {
+		t.Fatalf("want delete ids [fallback-new], got %v", ids)
+	}
+}
+
+// TestSend_StartFailureKeepsOriginal verifies the original session is not
+// deleted when the task cannot be started on the replacement, and that the
+// error names the replacement so the caller can find it.
+func TestSend_StartFailureKeepsOriginal(t *testing.T) {
+	client, mock, rec := newRecordingEnv(t)
+	t.Cleanup(func() { ResetDefaultSession("") })
+
+	mock.On("GetReplaySession", testutil.GetReplaySessionResponse("default-empty", ""))
+	mock.On("CreateReplaySession", testutil.CreateReplaySessionSeededResponse("fallback-new", "entry-9"))
+	// No StartReplayTask mock -> the start fails.
+
+	conn := caido.ReplayConnection{Host: "example.com", Port: 80}
+	_, err := Send(
+		context.Background(), client, "default-empty",
+		"GET / HTTP/1.1\r\nHost: example.com\r\n\r\n", conn, true,
+	)
+	if err == nil {
+		t.Fatal("want an error when the task cannot start")
+	}
+	if !strings.Contains(err.Error(), "fallback session fallback-new") {
+		t.Fatalf("error should name the new session, got %q", err)
+	}
+	if _, ok := rec.find("DeleteReplaySessions"); ok {
+		t.Fatal("must not delete the original before the replacement starts")
+	}
+}
+
+// TestSend_FallbackKeepsBusyDefaultSession verifies a default session with
+// history is not deleted on fallback: a concurrent call may still be polling
+// it. The cache still moves to the replacement.
+func TestSend_FallbackKeepsBusyDefaultSession(t *testing.T) {
+	client, mock, rec := newRecordingEnv(t)
+	ResetDefaultSession("default-busy")
+	t.Cleanup(func() { ResetDefaultSession("") })
+
+	mock.On("GetReplaySession", testutil.GetReplaySessionResponse("default-busy", "entry-1"))
+	mock.On("CreateReplaySession", testutil.CreateReplaySessionSeededResponse("fallback-new", "entry-9"))
+	mock.On("StartReplayTask", testutil.StartReplayTaskResponse())
+
+	conn := caido.ReplayConnection{Host: "example.com", Port: 80}
+	res, err := Send(
+		context.Background(), client, "default-busy",
+		"GET / HTTP/1.1\r\nHost: example.com\r\n\r\n", conn, true,
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if _, ok := rec.find("DeleteReplaySessions"); ok {
+		t.Fatal("must not delete a default session that has entries")
+	}
+	if res.DeletedOriginal {
+		t.Fatal("DeletedOriginal must be false for a kept session")
+	}
+	if id, _ := GetOrCreateSession(context.Background(), client, ""); id != "fallback-new" {
+		t.Fatalf("want cached default fallback-new, got %q", id)
+	}
+}
+
+// TestSend_LostDefaultSwapKeepsWinner verifies that when another call
+// already replaced the cached default, this call still returns its own
+// session and leaves the winner's cache entry alone.
+func TestSend_LostDefaultSwapKeepsWinner(t *testing.T) {
+	client, mock, rec := newRecordingEnv(t)
+	ResetDefaultSession("winner")
+	t.Cleanup(func() { ResetDefaultSession("") })
+
+	mock.On("GetReplaySession", testutil.GetReplaySessionResponse("default-busy", "entry-1"))
+	mock.On("CreateReplaySession", testutil.CreateReplaySessionSeededResponse("fallback-new", "entry-9"))
+	mock.On("StartReplayTask", testutil.StartReplayTaskResponse())
+
+	conn := caido.ReplayConnection{Host: "example.com", Port: 80}
+	res, err := Send(
+		context.Background(), client, "default-busy",
+		"GET / HTTP/1.1\r\nHost: example.com\r\n\r\n", conn, true,
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res.SessionID != "fallback-new" {
+		t.Fatalf("want own session fallback-new, got %q", res.SessionID)
+	}
+	if _, ok := rec.find("DeleteReplaySessions"); ok {
+		t.Fatal("must not delete any session")
+	}
+	sessionMu.Lock()
+	got := defaultSessionID
+	sessionMu.Unlock()
+	if got != "winner" {
+		t.Fatalf("winner's cache entry was clobbered: got %q", got)
+	}
+}
+
+func TestSwapDefaultSession(t *testing.T) {
+	t.Cleanup(func() { ResetDefaultSession("") })
+	ResetDefaultSession("a")
+	if !swapDefaultSession("a", "b") {
+		t.Fatal("swap from the current value must succeed")
+	}
+	if swapDefaultSession("a", "c") {
+		t.Fatal("swap from a stale value must lose")
+	}
+	sessionMu.Lock()
+	got := defaultSessionID
+	sessionMu.Unlock()
+	if got != "b" {
+		t.Fatalf("want cache b, got %q", got)
 	}
 }

@@ -86,6 +86,20 @@ func (c *ResponseCache) Clear(sessionID string) {
 	c.mu.Unlock()
 }
 
+// Copy seeds to with from's last digest so the first response on a
+// replacement session is diffed against the one it replaced instead of
+// reporting no diff. A no-op when from has no entry.
+func (c *ResponseCache) Copy(from, to string) {
+	if from == to {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if d, ok := c.entries[from]; ok {
+		c.entries[to] = d
+	}
+}
+
 func HashBody(body []byte) uint64 {
 	var h uint64 = 14695981039346656037
 	for _, b := range body {

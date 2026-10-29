@@ -101,7 +101,7 @@ func RegisterListRequestsTool(
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "caido_list_requests",
 		Title:       "List Requests",
-		Description: `List HTTP requests. Filter with httpql (e.g. req.host.eq:"example.com"). Returns id/method/url/status.`,
+		Description: `List HTTP requests. Filter with httpql (e.g. req.host.eq:"example.com"). On Caido 0.58+ match headers and bodies directly instead of scanning raw: req.header["Authorization"].cont:"Bearer", resp.body.cont:"stack trace". Returns id/method/url/status.`,
 		InputSchema: schemaFor[ListRequestsInput](func(s *jsonschema.Schema) {
 			if p := prop(s, "httpql"); p != nil {
 				p.MaxLength = intPtr(10000)

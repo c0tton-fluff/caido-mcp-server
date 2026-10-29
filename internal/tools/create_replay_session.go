@@ -3,8 +3,10 @@ package tools
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 
+	"github.com/c0tton-fluff/caido-mcp-server/v4/internal/replay"
 	caido "github.com/caido-community/sdk-go"
 	gen "github.com/caido-community/sdk-go/graphql"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -63,10 +65,18 @@ func createReplaySessionHandler(
 		output := CreateReplaySessionOutput{ID: sessionID}
 
 		if input.Name != "" {
-			if _, err := client.Replay.RenameSession(
-				ctx, sessionID, input.Name,
+			if _, _, err := replay.RenameSession(
+				ctx, client, sessionID, input.Name,
 			); err != nil {
-				return nil, CreateReplaySessionOutput{}, fmt.Errorf("rename session: %w", err)
+				// Do not leave an unnamed session behind: nothing returns its ID.
+				if _, delErr := client.Replay.DeleteSessions(
+					ctx, []string{sessionID},
+				); delErr != nil {
+					fmt.Fprintf(os.Stderr,
+						"replay: failed to delete orphaned session %s: %v\n",
+						sessionID, delErr)
+				}
+				return nil, CreateReplaySessionOutput{}, fmt.Errorf("rename session %s: %w", sessionID, err)
 			}
 			output.Name = input.Name
 		}

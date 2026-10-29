@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/c0tton-fluff/caido-mcp-server/v4/internal/replay"
 	caido "github.com/caido-community/sdk-go"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -26,22 +27,11 @@ func moveReplaySessionHandler(
 		req *mcp.CallToolRequest,
 		input MoveReplaySessionInput,
 	) (*mcp.CallToolResult, MoveReplaySessionOutput, error) {
-		resp, err := client.Replay.MoveSession(ctx, input.SessionID, input.CollectionID)
+		id, err := replay.MoveSession(ctx, client, input.SessionID, input.CollectionID)
 		if err != nil {
 			return nil, MoveReplaySessionOutput{}, fmt.Errorf("move session: %w", err)
 		}
-
-		if resp.MoveReplaySession.Session == nil {
-			return nil, MoveReplaySessionOutput{}, fmt.Errorf("move session returned nil")
-		}
-		session := *resp.MoveReplaySession.Session
-
-		output := MoveReplaySessionOutput{
-			ID:           session.GetId(),
-			CollectionID: input.CollectionID,
-		}
-
-		return nil, output, nil
+		return nil, MoveReplaySessionOutput{ID: id, CollectionID: input.CollectionID}, nil
 	}
 }
 

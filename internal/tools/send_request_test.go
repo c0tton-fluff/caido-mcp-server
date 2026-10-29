@@ -538,3 +538,79 @@ func TestSendRequestNewSessionJarSkipped(t *testing.T) {
 		})
 	}
 }
+
+// TestSendRequestCurl covers the curl input: the command is translated into
+// the raw request and its URL sets the connection, so the request Caido
+// receives is exactly what the curl would have sent.
+func TestSendRequestCurl(t *testing.T) {
+	newEnv := func(t *testing.T) *testutil.MCPTestEnv {
+		t.Helper()
+		replay.ResetDefaultSession("")
+		t.Cleanup(func() { replay.ResetDefaultSession("") })
+		env := testutil.NewMCPTestEnv(t, func(s *mcp.Server, c *caido.Client) {
+			tools.RegisterSendRequestTool(s, c)
+		})
+		env.Mock.ValidateAgainstSchema()
+		return env
+	}
+
+	t.Run("translates curl and targets its URL", func(t *testing.T) {
+		env := newEnv(t)
+		env.Mock.On("CreateReplaySession", testutil.CreateReplaySessionSeededResponse("c-1", "entry-1"))
+		env.Mock.On("RenameReplaySession", testutil.RenameReplaySessionResponse("c-1", "from curl"))
+		env.Mock.On("StartReplayTask", testutil.StartReplayTaskResponse())
+		env.Mock.On("GetReplaySession", testutil.GetReplaySessionResponse("c-1", "entry-1"))
+		env.Mock.On("GetReplayEntry", testutil.GetReplayEntryResponse("entry-1", "req-1", 200, "ok"))
+
+		result := env.CallTool(t, "caido_send_request", map[string]any{
+			"curl": `curl 'http://shop.test:8080/cart' -H 'X-A: 1' --data-raw 'qty=2'`,
+			"name": "from curl",
+		})
+		if result.IsError {
+			t.Fatalf("unexpected error: %+v", result.Content)
+		}
+		input, _ := env.Mock.LastVariables("CreateReplaySession")["input"].(map[string]any)
+		src, _ := input["requestSource"].(map[string]any)
+		rawIn, _ := src["raw"].(map[string]any)
+		ci, _ := rawIn["connectionInfo"].(map[string]any)
+		if ci["host"] != "shop.test" || ci["port"] != float64(8080) || ci["isTLS"] != false {
+			t.Fatalf("want connection shop.test:8080 plain, got %v", ci)
+		}
+		b64, _ := rawIn["raw"].(string)
+		sent, _ := base64.StdEncoding.DecodeString(b64)
+		want := "POST /cart HTTP/1.1\r\nHost: shop.test:8080\r\nX-A: 1\r\n" +
+			"Content-Type: application/x-www-form-urlencoded\r\nContent-Length: 5\r\n\r\nqty=2"
+		if string(sent) != want {
+			t.Fatalf("sent request:\n got %q\nwant %q", sent, want)
+		}
+	})
+
+	t.Run("raw and curl together are rejected", func(t *testing.T) {
+		env := newEnv(t)
+		result := env.CallTool(t, "caido_send_request", map[string]any{
+			"raw":  "GET / HTTP/1.1\r\nHost: a.test\r\n\r\n",
+			"curl": "curl https://a.test/",
+		})
+		if !result.IsError {
+			t.Fatal("expected error when both raw and curl are set")
+		}
+	})
+
+	t.Run("unsupported curl is a tool error", func(t *testing.T) {
+		env := newEnv(t)
+		result := env.CallTool(t, "caido_send_request", map[string]any{
+			"curl": "curl -F file=@x https://a.test/",
+		})
+		if !result.IsError {
+			t.Fatal("expected error for multipart curl")
+		}
+	})
+
+	t.Run("neither raw nor curl is rejected", func(t *testing.T) {
+		env := newEnv(t)
+		result := env.CallTool(t, "caido_send_request", map[string]any{"host": "a.test"})
+		if !result.IsError {
+			t.Fatal("expected error with no request")
+		}
+	})
+}

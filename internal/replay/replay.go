@@ -212,7 +212,7 @@ func createSeeded(
 		return "", fmt.Errorf("create replay session: %w", err)
 	}
 	if name != "" {
-		if _, err := client.Replay.RenameSession(ctx, newID, name); err != nil {
+		if _, _, err := RenameSession(ctx, client, newID, name); err != nil {
 			// Do not leak the half-built session: nothing returns its ID.
 			if _, delErr := client.Replay.DeleteSessions(
 				ctx, []string{newID},

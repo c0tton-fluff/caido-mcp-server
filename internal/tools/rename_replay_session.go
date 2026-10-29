@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/c0tton-fluff/caido-mcp-server/v4/internal/replay"
 	caido "github.com/caido-community/sdk-go"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -26,22 +27,11 @@ func renameReplaySessionHandler(
 		req *mcp.CallToolRequest,
 		input RenameReplaySessionInput,
 	) (*mcp.CallToolResult, RenameReplaySessionOutput, error) {
-		resp, err := client.Replay.RenameSession(ctx, input.SessionID, input.Name)
+		id, name, err := replay.RenameSession(ctx, client, input.SessionID, input.Name)
 		if err != nil {
 			return nil, RenameReplaySessionOutput{}, fmt.Errorf("rename session: %w", err)
 		}
-
-		session := resp.RenameReplaySession.Session
-		if session == nil {
-			return nil, RenameReplaySessionOutput{}, fmt.Errorf("rename session returned nil")
-		}
-
-		output := RenameReplaySessionOutput{
-			ID:   (*session).GetId(),
-			Name: (*session).GetName(),
-		}
-
-		return nil, output, nil
+		return nil, RenameReplaySessionOutput{ID: id, Name: name}, nil
 	}
 }
 

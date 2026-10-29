@@ -22,7 +22,7 @@
 
 Two ways to interact with your Caido proxy:
 
-- **MCP Server** - expose 68 tools and 6 read-only resources to AI assistants (Claude Code, Cursor, etc.) via the Model Context Protocol
+- **MCP Server** - expose 70 tools and 6 read-only resources to AI assistants (Claude Code, Cursor, etc.) via the Model Context Protocol
 - **CLI** - standalone terminal client for pentesters who prefer the command line
 
 Both share the same auth token, the same Go SDK, and the same codebase.
@@ -32,7 +32,8 @@ Both share the same auth token, the same Go SDK, and the same codebase.
 | Category | Capabilities |
 |----------|-------------|
 | **Proxy History** | Search requests with HTTPQL, get full request/response details, diff two responses |
-| **Replay** | Send HTTP requests, get response inline (status, headers, body). Per-session cookie jar auto-persists `Set-Cookie` between calls |
+| **Replay** | Send HTTP requests (raw or a pasted cURL command), get response inline (status, headers, body). Per-session cookie jar auto-persists `Set-Cookie` between calls |
+| **Race conditions** | Single-packet, last-byte-sync and sequential runs through Caido Replay Pipelines (0.59+), with a status-code tally per run |
 | **Automate** | Access fuzzing sessions, results, and payloads. Start/pause/resume/cancel tasks |
 | **Findings** | Create, list, delete, and export security findings |
 | **Sitemap** | Browse discovered endpoints |
@@ -199,7 +200,7 @@ you use it, so upgrading does not require a fresh login.
 "What's in scope?"
 ```
 
-### MCP Tools (66)
+### MCP Tools (70)
 
 | Tool | Description |
 |------|-------------|
@@ -270,7 +271,9 @@ you use it, so upgrading does not require a fresh login.
 | `caido_list_ws_streams` | List WebSocket streams (connections) from the WebSocket tab |
 | `caido_list_ws_messages` | List WebSocket frames for a stream (direction/format/decoded body) |
 | `caido_convert_body` | Convert a request body between JSON, form-urlencoded, XML, and multipart |
+| `caido_race_pipeline` | Race requests through a Caido Replay Pipeline (single-packet, last-byte or sequential; Caido 0.59+); logged in history |
 | `caido_race_window_send` | Fire raw HTTP/1.1 requests with synchronized last-byte send for race-condition testing (bypasses Caido proxy) |
+| `caido_passthrough_options` | Read or update pass-through options (tunnel without recording; keep history to in-scope only; Caido 0.59+) |
 
 ### MCP Resources (6)
 
@@ -292,7 +295,7 @@ Read-only data exposed via the MCP resources protocol. Agents can read these wit
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `httpql` | string | HTTPQL filter query |
+| `httpql` | string | HTTPQL filter query (Caido 0.58+: `req.header["Name"].cont:"x"`, `resp.body.cont:"x"`) |
 | `limit` | int | Max requests (default 20, max 100) |
 | `after` | string | Pagination cursor |
 
@@ -309,7 +312,8 @@ Read-only data exposed via the MCP resources protocol. Agents can read these wit
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `raw` | string | Full HTTP request (required) |
+| `raw` | string | Full HTTP request (this or `curl` is required) |
+| `curl` | string | A cURL command to send instead of `raw` (bash form, e.g. browser "Copy as cURL"); sets host/port/tls from its URL |
 | `host` | string | Target host (overrides Host header) |
 | `port` | int | Target port |
 | `tls` | bool | Use HTTPS (default true) |
@@ -321,6 +325,24 @@ Read-only data exposed via the MCP resources protocol. Agents can read these wit
 | `useCookieJar` | bool | Auto-inject session cookies and persist `Set-Cookie` (default true); set false to disable for this call only |
 | `includeBody` | bool | Include response body text (default true); the fingerprint is always populated |
 | `marker` | string | String to search for in the response body; when set, `output.reflected` reports whether it was found |
+
+#### caido_race_pipeline
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `host` | string | Target host (required) |
+| `port` | int | Target port (default 443 with TLS, 80 without) |
+| `tls` | bool | Use TLS (default true) |
+| `requests` | array | 1..50 `{label, raw}` requests; repeat one request N times to race it (required) |
+| `strategy` | string | `last-byte` (default), `single-packet` (needs Caido's experimental v2 network stack), or `sequential` |
+| `convertToHttp2` | bool | single-packet: send over one HTTP/2 connection (default true) |
+| `fireOnPartial` | bool | single-packet/last-byte: release the requests that prepared even if some failed (default false) |
+| `abortOnFailure` | bool | sequential: stop at the first failure |
+| `collectionId` / `name` | string | File and title the pipeline session |
+| `bodyLimit` | int | Per-response body bytes (default 256, max 4096) |
+| `timeoutSec` | int | Seconds to wait for all responses (default 30, max 120) |
+
+Returns `statusCounts` (e.g. `{"200":2,"409":18}`) plus per-request status, timing and body.
 
 #### caido_get_replay_entry
 

@@ -11,7 +11,7 @@ import (
 
 // Listing goes through hand-written queries instead of sdk-go because the
 // generated decoders reject any __typename they were not generated for.
-// Caido 0.58 added Pipeline sessions (ReplaySessionHttpOnePipeline), so a
+// Caido 0.58 added Pipeline sessions (ReplaySessionHttpPipeline), so a
 // single pipeline session in the project made every sdk-go session list
 // fail with "unexpected concrete type". Decoding into plain structs keeps
 // unknown kinds as summaries instead.
@@ -120,7 +120,7 @@ func sessionKind(typename string) string {
 		return KindHTTP
 	case "ReplaySessionWs":
 		return KindWS
-	case "ReplaySessionHttpOnePipeline":
+	case "ReplaySessionHttpPipeline":
 		return KindPipeline
 	}
 	return typename

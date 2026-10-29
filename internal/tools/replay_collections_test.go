@@ -97,7 +97,7 @@ func TestListReplaySessions(t *testing.T) {
 					"collection":  map[string]any{"id": "col-1", "name": "main"},
 				},
 				map[string]any{
-					"__typename": "ReplaySessionHttpOnePipeline",
+					"__typename": "ReplaySessionHttpPipeline",
 					"id":         "sess-2",
 					"name":       "race",
 				},
@@ -472,6 +472,18 @@ func TestMoveReplaySession(t *testing.T) {
 			wantCollectionID: "col-2",
 		},
 		{
+			// sdk-go's decoder rejected this kind; live 0.59.0 regression.
+			name: "moves a pipeline session",
+			args: map[string]any{"sessionId": "pipe-1", "collectionId": "col-2"},
+			mock: map[string]any{
+				"moveReplaySession": map[string]any{
+					"session": map[string]any{"__typename": "ReplaySessionHttpPipeline", "id": "pipe-1"},
+				},
+			},
+			wantID:           "pipe-1",
+			wantCollectionID: "col-2",
+		},
+		{
 			name: "nil session in payload errors",
 			args: map[string]any{"sessionId": "sess-1", "collectionId": "col-2"},
 			mock: map[string]any{
@@ -608,6 +620,22 @@ func TestRenameReplaySession(t *testing.T) {
 			},
 			wantID:   "sess-1",
 			wantName: "Step 1 - login",
+		},
+		{
+			// sdk-go's decoder rejected this kind; live 0.59.0 regression.
+			name: "renames a pipeline session",
+			args: map[string]any{"sessionId": "pipe-1", "name": "Race - coupon"},
+			mock: map[string]any{
+				"renameReplaySession": map[string]any{
+					"session": map[string]any{
+						"__typename": "ReplaySessionHttpPipeline",
+						"id":         "pipe-1",
+						"name":       "Race - coupon",
+					},
+				},
+			},
+			wantID:   "pipe-1",
+			wantName: "Race - coupon",
 		},
 		{
 			name: "nil session in payload errors",

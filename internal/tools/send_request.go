@@ -18,7 +18,8 @@ import (
 
 // SendRequestInput is the input for the send_request tool
 type SendRequestInput struct {
-	Raw          string `json:"raw" jsonschema:"required,Raw HTTP request including headers and body"`
+	Raw          string `json:"raw,omitempty" jsonschema:"Raw HTTP request including headers and body (one of raw or curl is required)"`
+	Curl         string `json:"curl,omitempty" jsonschema:"A curl command (e.g. browser Copy as cURL bash) to send instead of raw; host/port/tls come from its URL unless set"`
 	Host         string `json:"host,omitempty" jsonschema:"Target host (overrides Host header)"`
 	Port         int    `json:"port,omitempty" jsonschema:"Target port (default based on TLS)"`
 	TLS          *bool  `json:"tls,omitempty" jsonschema:"Use HTTPS (default true)"`
@@ -84,6 +85,35 @@ func carryOverSession(oldID string, res *replay.SendResult) {
 	}
 }
 
+// curlToRaw translates input.Curl into input.Raw, filling host, port and
+// TLS from the curl URL where the caller did not set them.
+func curlToRaw(input *SendRequestInput) error {
+	if input.Curl == "" {
+		return nil
+	}
+	if input.Raw != "" {
+		return fmt.Errorf("pass either raw or curl, not both")
+	}
+	if err := checkRawSize("curl", input.Curl); err != nil {
+		return err
+	}
+	parsed, err := httputil.ParseCurl(input.Curl)
+	if err != nil {
+		return fmt.Errorf("curl: %w", err)
+	}
+	input.Raw = parsed.Raw
+	if input.Host == "" {
+		input.Host = parsed.Host
+		if input.Port == 0 {
+			input.Port = parsed.Port
+		}
+	}
+	if input.TLS == nil {
+		input.TLS = &parsed.TLS
+	}
+	return nil
+}
+
 // sendRequestHandler creates the handler function
 func sendRequestHandler(
 	client *caido.Client,
@@ -93,9 +123,12 @@ func sendRequestHandler(
 		req *mcp.CallToolRequest,
 		input SendRequestInput,
 	) (*mcp.CallToolResult, SendRequestOutput, error) {
+		if err := curlToRaw(&input); err != nil {
+			return nil, SendRequestOutput{}, err
+		}
 		if input.Raw == "" {
 			return nil, SendRequestOutput{}, fmt.Errorf(
-				"raw HTTP request is required",
+				"raw HTTP request (or curl) is required",
 			)
 		}
 		if err := checkRawSize("raw", input.Raw); err != nil {
@@ -344,6 +377,9 @@ func RegisterSendRequestTool(
 		Description: `Send an HTTP request; returns statusCode, headers, body, and a response fingerprint (title, redirect, cookie names, word count, notableHeaders). Polls up to 10s; on timeout returns entryId for get_replay_entry. Without sessionId, requests reuse one unnamed default session. To file a request as its own titled session inside a collection, pass collectionId and/or name instead of sessionId; reuse the returned sessionId for follow-ups. Session cookies auto-persist across calls with the same sessionId (useCookieJar:false to disable). includeBody:false omits body text; marker checks response body for reflection. See README "Response fingerprinting" for field details.`,
 		InputSchema: schemaFor[SendRequestInput](func(s *jsonschema.Schema) {
 			if p := prop(s, "raw"); p != nil {
+				p.MaxLength = intPtr(maxRawRequestBytes)
+			}
+			if p := prop(s, "curl"); p != nil {
 				p.MaxLength = intPtr(maxRawRequestBytes)
 			}
 		}),

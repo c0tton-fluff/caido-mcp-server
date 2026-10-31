@@ -46,6 +46,9 @@ func ListRequestsResponse(ids ...string) map[string]any {
 				"hasNextPage": false,
 				"endCursor":   nil,
 			},
+			// Caido always returns the total; the fixture mirrors that so a
+			// handler that drops it cannot look correct by accident.
+			"count": map[string]any{"value": len(ids)},
 		},
 	}
 }

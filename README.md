@@ -204,7 +204,7 @@ you use it, so upgrading does not require a fresh login.
 
 | Tool | Description |
 |------|-------------|
-| `caido_list_requests` | List requests with HTTPQL filter and pagination |
+| `caido_list_requests` | List requests with HTTPQL filter, ordering and pagination; returns the filter's total count |
 | `caido_get_request` | Get request details (metadata, headers, body). 2KB body limit default |
 | `caido_diff_responses` | Structural diff of two responses by Caido request ID: status/size change flags and a compact body/header summary (never dumps full bodies) |
 | `caido_send_request` | Send HTTP request via Replay, returns response inline. Polls up to 10s. Auto-injects session cookies and persists `Set-Cookie` (toggle with `useCookieJar`) |
@@ -298,6 +298,10 @@ Read-only data exposed via the MCP resources protocol. Agents can read these wit
 | `httpql` | string | HTTPQL filter query (Caido 0.58+: `req.header["Name"].cont:"x"`, `resp.body.cont:"x"`) |
 | `limit` | int | Max requests (default 20, max 100) |
 | `after` | string | Pagination cursor |
+| `orderBy` | string | Sort field: `id`, `createdAt`, `host`, `method`, `path`, `query`, `fileExtension`, `source`, `statusCode`, `roundtripTime`, `responseLength`. Omit for Caido's default order |
+| `order` | string | `asc` or `desc` (default `desc` when `orderBy` is set; `desc` without `orderBy` sorts by id, i.e. newest first) |
+
+`totalCount` in the response is every request matching `httpql`, not just the rows on the page, so `{"httpql": "...", "limit": 1}` counts matches in one call. The newest N is `{"limit": N, "order": "desc"}`. `nextCursor` keeps the requested order, so `after` pages contiguously.
 
 #### caido_get_request
 

@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- **`caido_list_requests` can sort, and reports the total.** New `orderBy` (`id`, `createdAt`, `host`, `method`, `path`, `query`, `fileExtension`, `source`, `statusCode`, `roundtripTime`, `responseLength`) and `order` (`asc`/`desc`) parameters map onto Caido's `requests(order:)`, so the newest N is one call (`{"limit": 5, "order": "desc"}`) instead of paging from the oldest row. The response gains `totalCount`, the number of requests matching `httpql`, taken from the `count` the query already returned and the tool was discarding; `{"limit": 1}` plus `totalCount` counts matches without paging. Cursors keep the requested order, so `after` continues where `nextCursor` left off. Calls that pass neither parameter send the same query as before.
+
 ## [4.4.0] - 2026-10-29
 
 Caido 0.58/0.59 support: native race testing through Replay Pipelines, TLS pass-through control, cURL input, and fixes found by testing against a live 0.59.0 server. Works with Caido 0.57+; `caido_race_pipeline` and `caido_passthrough_options` need 0.59.

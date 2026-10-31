@@ -65,6 +65,12 @@ func TestSchemaEnumsAdvertised(t *testing.T) {
 		{"caido_automate_task_control", "action", []string{"start", "pause", "resume", "cancel"}},
 		{"caido_intercept_control", "action", []string{"pause", "resume"}},
 		{"caido_run_workflow", "type", []string{"active", "convert"}},
+		{"caido_list_requests", "order", []string{"asc", "desc"}},
+		{"caido_list_requests", "orderBy", []string{
+			"id", "createdAt", "host", "method", "path", "query",
+			"fileExtension", "source", "statusCode", "roundtripTime",
+			"responseLength",
+		}},
 		{"caido_create_tamper_rule", "section", sections},
 		{"caido_update_tamper_rule", "section", sections},
 		{"caido_test_tamper_rule", "section", sections},

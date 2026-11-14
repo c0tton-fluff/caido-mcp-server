@@ -1,7 +1,6 @@
 package tools_test
 
 import (
-	"encoding/base64"
 	"testing"
 
 	caido "github.com/caido-community/sdk-go"
@@ -10,12 +9,6 @@ import (
 	"github.com/c0tton-fluff/caido-mcp-server/v4/internal/testutil"
 	"github.com/c0tton-fluff/caido-mcp-server/v4/internal/tools"
 )
-
-// b64 encodes a string the way the GraphQL Blob scalar is serialized, so the
-// tool's decodeWsBody can round-trip it back to plaintext.
-func b64(s string) string {
-	return base64.StdEncoding.EncodeToString([]byte(s))
-}
 
 // streamsData builds the "streams" connection payload for OpName ListStreams.
 // hasNext drives pagination; endCursor is only meaningful when hasNext is true.
@@ -190,7 +183,7 @@ func TestListWsMessagesTool(t *testing.T) {
 		{
 			name:          "success decodes base64 body",
 			input:         map[string]any{"stream_id": "stream-1"},
-			mock:          wsMessagesData(false, "", b64("hello-frame")),
+			mock:          wsMessagesData(false, "", testutil.B64("hello-frame")),
 			registerOp:    true,
 			wantMessages:  1,
 			wantHasMore:   false,
@@ -200,7 +193,7 @@ func TestListWsMessagesTool(t *testing.T) {
 		{
 			name:         "pagination has more",
 			input:        map[string]any{"stream_id": "stream-1", "limit": 1},
-			mock:         wsMessagesData(true, "next-cursor", b64("frame-a")),
+			mock:         wsMessagesData(true, "next-cursor", testutil.B64("frame-a")),
 			registerOp:   true,
 			wantMessages: 1,
 			wantHasMore:  true,
@@ -212,7 +205,7 @@ func TestListWsMessagesTool(t *testing.T) {
 				"stream_id":  "stream-1",
 				"body_limit": 4,
 			},
-			mock:          wsMessagesData(false, "", b64(bigPayload)),
+			mock:          wsMessagesData(false, "", testutil.B64(bigPayload)),
 			registerOp:    true,
 			wantMessages:  1,
 			wantFirstBody: bigPayload[:4],

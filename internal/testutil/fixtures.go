@@ -5,6 +5,9 @@ import (
 	"fmt"
 )
 
+// B64 base64-encodes s, the way Caido serializes a Blob.
+func B64(s string) string { return base64.StdEncoding.EncodeToString([]byte(s)) }
+
 func RawHTTPResponse(status int, body string) string {
 	raw := fmt.Sprintf(
 		"HTTP/1.1 %d OK\r\nContent-Type: text/html\r\nContent-Length: %d\r\n\r\n%s",

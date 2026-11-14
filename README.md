@@ -22,7 +22,7 @@
 
 Two ways to interact with your Caido proxy:
 
-- **MCP Server** - expose 70 tools and 6 read-only resources to AI assistants (Claude Code, Cursor, etc.) via the Model Context Protocol
+- **MCP Server** - expose 74 tools and 6 read-only resources to AI assistants (Claude Code, Cursor, etc.) via the Model Context Protocol
 - **CLI** - standalone terminal client for pentesters who prefer the command line
 
 Both share the same auth token, the same Go SDK, and the same codebase.
@@ -33,6 +33,7 @@ Both share the same auth token, the same Go SDK, and the same codebase.
 |----------|-------------|
 | **Proxy History** | Search requests with HTTPQL, get full request/response details, diff two responses |
 | **Replay** | Send HTTP requests (raw or a pasted cURL command), get response inline (status, headers, body). Per-session cookie jar auto-persists `Set-Cookie` between calls |
+| **WebSocket** | Browse WS history; open a socket through Caido Replay (0.59+), send frames, long-poll pushed frames (e.g. graphql-ws subscriptions), close |
 | **Race conditions** | Single-packet, last-byte-sync and sequential runs through Caido Replay Pipelines (0.59+), with a status-code tally per run |
 | **Automate** | Access fuzzing sessions, results, and payloads. Start/pause/resume/cancel tasks |
 | **Findings** | Create, list, delete, and export security findings |
@@ -200,7 +201,7 @@ you use it, so upgrading does not require a fresh login.
 "What's in scope?"
 ```
 
-### MCP Tools (70)
+### MCP Tools (74)
 
 | Tool | Description |
 |------|-------------|
@@ -270,6 +271,10 @@ you use it, so upgrading does not require a fresh login.
 | `caido_list_plugins` | List installed plugin packages |
 | `caido_list_ws_streams` | List WebSocket streams (connections) from the WebSocket tab |
 | `caido_list_ws_messages` | List WebSocket frames for a stream (direction/format/decoded body) |
+| `caido_ws_connect` | Open a WebSocket through a WS Replay session (url + headers/subprotocols, raw, or a history request); logged in history (Caido 0.59+) |
+| `caido_ws_send` | Send frames in order on a session's open WebSocket |
+| `caido_ws_read` | Long-poll a session's WebSocket for new (pushed) frames, with until/skip rules and a resume cursor |
+| `caido_ws_close` | Close a session's open WebSocket |
 | `caido_convert_body` | Convert a request body between JSON, form-urlencoded, XML, and multipart |
 | `caido_race_pipeline` | Race requests through a Caido Replay Pipeline (single-packet, last-byte or sequential; Caido 0.59+); logged in history |
 | `caido_race_window_send` | Fire raw HTTP/1.1 requests with synchronized last-byte send for race-condition testing (bypasses Caido proxy) |
@@ -343,6 +348,31 @@ Read-only data exposed via the MCP resources protocol. Agents can read these wit
 | `timeoutSec` | int | Seconds to wait for all responses (default 30, max 120) |
 
 Returns `statusCounts` (e.g. `{"200":2,"409":18}`) plus per-request status, timing and body.
+
+#### caido_ws_connect / send / read / close
+
+Drive a WebSocket (e.g. a graphql-ws subscription) through Caido: the socket is opened from a WS Replay session, so every frame lands in WS history and the named replay tab. The tools take the session's `sessionId`; `caido_ws_read` also reads any stream by `streamId`.
+
+| Tool | Parameter | Description |
+|------|-----------|-------------|
+| `caido_ws_connect` | `url` + `headers` + `subprotocols` | Build the upgrade request from a `ws://`/`wss://` URL; headers override generated ones by name |
+| | `raw` + `host`/`port`/`tls` | Or a full raw upgrade request |
+| | `requestId` | Or a captured upgrade request from history |
+| | `sessionId` | Reuse a WS session with the new handshake (closes an open connection on it). Some Caido plans allow a single WS session |
+| | `collectionId` / `name` | File and title the session |
+| | `connect` | `false` only prepares the tab (default true) |
+| | `timeoutSec` | Handshake wait (default 10, max 60) |
+| `caido_ws_send` | `frames` | 1..50 `{body, format: TEXT\|BINARY, base64}` sent in order |
+| | `delayMs` | Pause between frames (max 10000) |
+| `caido_ws_read` | `after` | Cursor from the previous read; drop it after reconnecting |
+| | `waitMs` | Long-poll time (default 3000, max 120000) |
+| | `untilContains` / `untilCount` | Stop at a matching frame / after N frames (at most one; default: return as soon as frames arrive) |
+| | `skipBodies` | Drop exact bodies such as keep-alives; PING/PONG are always dropped |
+| | `includeSent` | Also return client frames (default: server frames only) |
+| | `limit` / `bodyLimit` | Frames per read (default 50, max 200) / bytes per frame body (default 4096, max 65536) |
+| `caido_ws_close` | | Returns `closed: false` when nothing was open; Caido's API sends no status code or reason |
+
+`caido_ws_connect` returns `statusCode` (101 on success), response headers, `open`, and the body of a rejected handshake; `error` when the connection failed before any response (refused, DNS, TLS), `pending` when `timeoutSec` passed first. `caido_ws_read` frames carry `direction` `sent`/`received`; `more: true` means the read hit its scan cap with frames left (read again with the cursor), `open: false` that the connection closed. Caveat: Caido 0.59.1 replay recording drops server frames that arrive back to back (under ~20ms apart).
 
 #### caido_get_replay_entry
 

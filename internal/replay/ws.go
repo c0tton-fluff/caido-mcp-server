@@ -2,6 +2,7 @@ package replay
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/base64"
 	"errors"
@@ -63,7 +64,9 @@ const getWSSessionQuery = `query GetReplayWsSession($id: ID!) {
   replaySession(id: $id) {
     __typename
     id
+    name
     ... on ReplaySessionWs {
+      collection { id name }
       activeEntry {
         ... on ReplayEntryWs { http { id } stream { id } }
       }
@@ -159,14 +162,19 @@ type wsSession struct {
 	handshakeID string
 	// streamID is the stream of the latest connection, empty if it never
 	// connected.
-	streamID string
+	streamID       string
+	name           string
+	collectionID   string
+	collectionName string
 }
 
 // getWSSession reads a session and checks it is a WebSocket session.
 func getWSSession(ctx context.Context, client *caido.Client, id string) (*wsSession, error) {
 	var data struct {
 		ReplaySession *struct {
-			Typename    string `json:"__typename"`
+			Typename    string    `json:"__typename"`
+			Name        string    `json:"name"`
+			Collection  *namedRef `json:"collection"`
 			ActiveEntry *struct {
 				HTTP *struct {
 					ID string `json:"id"`
@@ -191,7 +199,10 @@ func getWSSession(ctx context.Context, client *caido.Client, id string) (*wsSess
 	if kind := sessionKind(s.Typename); kind != KindWS {
 		return nil, fmt.Errorf("replay session %s is a %s session, not a WebSocket one", id, kind)
 	}
-	out := &wsSession{}
+	out := &wsSession{name: s.Name}
+	if c := s.Collection; c != nil {
+		out.collectionID, out.collectionName = c.ID, c.Name
+	}
 	if e := s.ActiveEntry; e != nil {
 		if e.HTTP != nil {
 			out.handshakeID = e.HTTP.ID
@@ -289,8 +300,14 @@ type WSConnectOptions struct {
 	// SkipOpen only stores the handshake, leaving the tab ready for a human
 	// to click Connect.
 	SkipOpen bool
-	// Timeout bounds the wait for the handshake response.
+	// Timeout bounds the wait for the handshake response and, on a reused
+	// session, for its open connection to close. A zero Timeout leaves the
+	// close bounded by wsCloseTimeout.
 	Timeout time.Duration
+	// ReuseOnLimit, when creating a session hits the plan's cap on WS
+	// sessions and exactly one WS session exists, reuses that one instead
+	// (moved into CollectionID and renamed to Name).
+	ReuseOnLimit bool
 }
 
 // WSConnection is the outcome of WSConnect. A connection still waiting for
@@ -298,9 +315,23 @@ type WSConnectOptions struct {
 type WSConnection struct {
 	SessionID string
 	Created   bool
+	// Reused reports that creating hit the plan's session cap and the only
+	// WS session was reused (ReuseOnLimit).
+	Reused bool
 	// ClosedPrevious reports that a connection open on the reused session
 	// was closed.
 	ClosedPrevious bool
+	// PreviousStreamID is the stream of the run a reused session showed
+	// before: the tab now shows the new run, the old one stays readable in
+	// WS history under this stream.
+	PreviousStreamID string
+	// MovedFrom is the collection a reused session was moved out of.
+	MovedFrom string
+	// Name, CollectionID and CollectionName describe where the session is
+	// filed after the call; empty if reading it back failed.
+	Name           string
+	CollectionID   string
+	CollectionName string
 	StreamID       string
 	// Open reports whether the connection was still open after the wait.
 	Open bool
@@ -325,49 +356,108 @@ func WSConnect(
 			input["collectionId"] = opts.CollectionID
 		}
 		id, err := CreateNamedSession(ctx, client, input, opts.Name)
-		if err != nil {
-			return nil, fmt.Errorf("create ws session: %w", err)
+		if err == nil {
+			conn.SessionID, conn.Created = id, true
+		} else if only, err := sessionToReuse(ctx, client, err, opts.ReuseOnLimit); err != nil {
+			return nil, err
+		} else {
+			conn.SessionID, conn.Reused = only, true
+			opts.SessionID = only
 		}
-		conn.SessionID, conn.Created = id, true
-	} else {
-		closed, err := reseedWSSession(ctx, client, opts)
-		conn.ClosedPrevious = closed
-		if err != nil {
+	}
+	if !conn.Created {
+		if err := reseedWSSession(ctx, client, opts, conn); err != nil {
 			return conn, err
 		}
 	}
-	if opts.SkipOpen {
-		return conn, nil
+	if !opts.SkipOpen {
+		// On a reused session a task that just ended (closed here, by the
+		// server, or by a human) can still be finishing inside Caido.
+		task, entry, err := startWSTask(ctx, client, conn.SessionID, !conn.Created)
+		if err != nil {
+			return conn, err
+		}
+		if err := waitHandshake(ctx, client, conn, task, entry, opts.Timeout); err != nil {
+			return conn, err
+		}
 	}
-
-	// On a reused session a task that just ended (closed here, by the
-	// server, or by a human) can still be finishing inside Caido.
-	task, entry, err := startWSTask(ctx, client, conn.SessionID, !conn.Created)
-	if err != nil {
-		return conn, err
+	// A created or moved session's collection name is not known yet. Best
+	// effort: where the traffic is filed is not worth failing a connection
+	// that is already open.
+	if conn.CollectionName == "" {
+		if s, err := getWSSession(ctx, client, conn.SessionID); err == nil {
+			conn.Name, conn.CollectionID, conn.CollectionName = s.name, s.collectionID, s.collectionName
+		}
 	}
-	return conn, waitHandshake(ctx, client, conn, task, entry, opts.Timeout)
+	return conn, nil
 }
+
+// sessionToReuse decides what a failed create falls back to: with the plan's
+// WS session cap reached, reuse=true and exactly one WS session, that
+// session's ID; otherwise the error to report.
+func sessionToReuse(ctx context.Context, client *caido.Client, err error, reuse bool) (string, error) {
+	err = fmt.Errorf("create ws session: %w", err)
+	if !errors.Is(err, ErrSessionLimit) {
+		return "", err
+	}
+	ids, lerr := wsSessionIDs(ctx, client)
+	switch {
+	case lerr != nil:
+		return "", fmt.Errorf("%w (listing WS sessions failed: %w)", err, lerr)
+	case len(ids) == 1 && reuse:
+		return ids[0], nil
+	case len(ids) == 1:
+		return "", fmt.Errorf("%w; or pass reuse=true to reuse the only WS session %s "+
+			"(moved into collectionId, renamed to name)", err, ids[0])
+	case reuse:
+		return "", fmt.Errorf("%w; reuse=true needs exactly one WS session to exist", err)
+	}
+	return "", err
+}
+
+// wsSessionIDs lists the IDs of the project's WS replay sessions.
+func wsSessionIDs(ctx context.Context, client *caido.Client) ([]string, error) {
+	all, err := ListSessions(ctx, client)
+	if err != nil {
+		return nil, err
+	}
+	var ids []string
+	for _, s := range all {
+		if s.Kind == KindWS {
+			ids = append(ids, s.ID)
+		}
+	}
+	return ids, nil
+}
+
+// wsCloseTimeout bounds a stop. Caido can leave stopReplayWsTasks
+// unanswered for a socket the server keeps open.
+const wsCloseTimeout = 10 * time.Second
 
 // reseedWSSession replaces the session's handshake, applies name and
 // collection, and then closes any open connection on it, last, so a failed
 // step leaves a live socket alone. Drafting the handshake does not touch
-// the running task (each start snapshots a new entry). It reports whether
-// a connection was closed.
+// the running task (each start snapshots a new entry). It records in conn
+// the run being replaced, the collection left and whether a connection
+// was closed.
 func reseedWSSession(
-	ctx context.Context, client *caido.Client, opts WSConnectOptions,
-) (bool, error) {
+	ctx context.Context, client *caido.Client, opts WSConnectOptions, conn *WSConnection,
+) error {
 	s, err := getWSSession(ctx, client, opts.SessionID)
 	if err != nil {
-		return false, err
+		return err
 	}
 	if s.handshakeID == "" {
-		return false, fmt.Errorf(
+		retry := "call caido_ws_connect without sessionId"
+		if conn.Reused {
+			retry = "retry"
+		}
+		return fmt.Errorf(
 			"ws session %s was created empty and has no handshake to replace; "+
-				"delete it (caido_delete_replay_sessions) and call "+
-				"caido_ws_connect without sessionId", opts.SessionID,
+				"delete it (caido_delete_replay_sessions) and %s", opts.SessionID, retry,
 		)
 	}
+	conn.Name, conn.CollectionID, conn.CollectionName = s.name, s.collectionID, s.collectionName
 
 	var updated struct {
 		UpdateReplayEntryDraft struct {
@@ -389,23 +479,45 @@ func reseedWSSession(
 			}},
 		},
 	}, &gql.Response{Data: &updated}); err != nil {
-		return false, fmt.Errorf("replace handshake of session %s: %w", opts.SessionID, err)
+		return fmt.Errorf("replace handshake of session %s: %w", opts.SessionID, err)
 	}
 	if updated.UpdateReplayEntryDraft.Entry == nil {
-		return false, fmt.Errorf("replace handshake of session %s: entry not found", opts.SessionID)
+		return fmt.Errorf("replace handshake of session %s: entry not found", opts.SessionID)
 	}
 
 	if opts.Name != "" {
 		if _, _, err := RenameSession(ctx, client, opts.SessionID, opts.Name); err != nil {
-			return false, fmt.Errorf("rename session %s: %w", opts.SessionID, err)
+			return fmt.Errorf("rename session %s: %w", opts.SessionID, err)
 		}
+		conn.Name = opts.Name
 	}
 	if opts.CollectionID != "" {
 		if _, err := MoveSession(ctx, client, opts.SessionID, opts.CollectionID); err != nil {
-			return false, fmt.Errorf("move session %s: %w", opts.SessionID, err)
+			return fmt.Errorf("move session %s: %w", opts.SessionID, err)
+		}
+		if s.collectionID != opts.CollectionID {
+			conn.MovedFrom = s.collectionID
+			conn.CollectionID, conn.CollectionName = opts.CollectionID, ""
 		}
 	}
-	return closeWSTask(ctx, client, opts.SessionID)
+	closeTimeout := cmp.Or(opts.Timeout, wsCloseTimeout)
+	res, err := closeWSTask(ctx, client, opts.SessionID, closeTimeout)
+	conn.ClosedPrevious = res.Closed
+	if err != nil {
+		return err
+	}
+	if res.TimedOut {
+		return fmt.Errorf(
+			"the Caido Replay task did not close its open connection within %v; "+
+				"close it in the Replay tab or retry", closeTimeout,
+		)
+	}
+	if !opts.SkipOpen {
+		// Only now is the tab about to follow a new entry; on an earlier
+		// failure it still shows this stream.
+		conn.PreviousStreamID = s.streamID
+	}
+	return nil
 }
 
 // startWSTask starts the session's task and returns its task and entry IDs.
@@ -616,33 +728,71 @@ func WSClose(ctx context.Context, client *caido.Client, taskID string) error {
 	return nil
 }
 
-// closeWSTask closes the session's open connection, if any, and reports
-// whether it closed one. A task that ends on its own meanwhile is not an
-// error.
-func closeWSTask(ctx context.Context, client *caido.Client, sessionID string) (bool, error) {
-	taskID, _, err := findWSTask(ctx, client, sessionID)
-	if err != nil || taskID == "" {
-		return false, err
-	}
-	if err := WSClose(ctx, client, taskID); err != nil {
-		if errors.Is(err, ErrWSNotOpen) {
-			return false, nil
-		}
-		return false, err
-	}
-	return true, nil
+// WSCloseResult is the outcome of closing a session's connection.
+type WSCloseResult struct {
+	// Closed reports that an open connection was closed.
+	Closed bool
+	// TimedOut reports that Caido did not answer the stop within the
+	// timeout and the connection is still listed as open, or the task list
+	// could not be read to tell.
+	TimedOut bool
 }
 
-// WSCloseSession closes a WS session's open connection and reports whether
-// one was open.
-func WSCloseSession(ctx context.Context, client *caido.Client, sessionID string) (bool, error) {
-	closed, err := closeWSTask(ctx, client, sessionID)
-	if err != nil || closed {
-		return closed, err
+// closeWSTask closes the session's open connection, if any, waiting at most
+// timeout for Caido to answer. A task that ends on its own meanwhile is not
+// an error.
+func closeWSTask(
+	ctx context.Context, client *caido.Client, sessionID string, timeout time.Duration,
+) (WSCloseResult, error) {
+	// The lookup and the stop share one deadline: a Caido that leaves the
+	// stop unanswered may not answer the lookup either.
+	opCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	// ours reports that our deadline, not the caller's context, ended a call.
+	ours := func(c context.Context) bool { return c.Err() != nil && ctx.Err() == nil }
+
+	taskID, _, err := findWSTask(opCtx, client, sessionID)
+	switch {
+	case err != nil && ours(opCtx):
+		return WSCloseResult{TimedOut: true}, nil
+	case err != nil || taskID == "":
+		return WSCloseResult{}, err
+	}
+	err = WSClose(opCtx, client, taskID)
+	switch {
+	case err == nil:
+		return WSCloseResult{Closed: true}, nil
+	case errors.Is(err, ErrWSNotOpen):
+		return WSCloseResult{}, nil
+	case !ours(opCtx):
+		return WSCloseResult{}, err
+	}
+	// The stop went unanswered; it may still have taken effect, so ask the
+	// task list (bounded too) whether the task is gone.
+	checkCtx, cancelCheck := context.WithTimeout(ctx, timeout)
+	defer cancelCheck()
+	still, _, err := findWSTask(checkCtx, client, sessionID)
+	switch {
+	case err != nil && ctx.Err() != nil:
+		return WSCloseResult{}, ctx.Err()
+	case err == nil && still != taskID:
+		return WSCloseResult{Closed: true}, nil
+	}
+	return WSCloseResult{TimedOut: true}, nil
+}
+
+// WSCloseSession closes a WS session's open connection, waiting at most
+// timeout for Caido to answer.
+func WSCloseSession(
+	ctx context.Context, client *caido.Client, sessionID string, timeout time.Duration,
+) (WSCloseResult, error) {
+	res, err := closeWSTask(ctx, client, sessionID, timeout)
+	if err != nil || res.Closed || res.TimedOut {
+		return res, err
 	}
 	// Nothing was open: still report a session that is missing or not WS.
 	_, err = getWSSession(ctx, client, sessionID)
-	return false, err
+	return res, err
 }
 
 // WSMessage is one stored frame.
@@ -688,8 +838,13 @@ type WSReadOptions struct {
 type WSReadResult struct {
 	Messages []WSMessage
 	// Cursor resumes after the last frame scanned (kept or skipped).
-	Cursor  string
-	Skipped int
+	Cursor string
+	// SkippedSent counts client frames dropped (IncludeSent off),
+	// SkippedBodies frames dropped by SkipBodies, SkippedControl PING and
+	// PONG frames.
+	SkippedSent    int
+	SkippedBodies  int
+	SkippedControl int
 	// Matched reports the stop rule was met; false means Wait passed, the
 	// limit or the scan cap was hit, or the connection closed first.
 	Matched bool
@@ -733,12 +888,17 @@ type wsNode struct {
 	} `json:"head"`
 }
 
-// keep converts a stored frame, or reports false for one the options
-// skip. Frames dropped on direction or format are not decoded.
+// keep converts a stored frame, or counts it as skipped and reports false.
+// Frames dropped on direction or format are not decoded.
 func (r *wsReader) keep(n wsNode) (WSMessage, bool) {
 	h := n.Head
 	sent := h.Direction == wsDirToServer
-	if h.Format == "PING" || h.Format == "PONG" || (sent && !r.opts.IncludeSent) {
+	switch {
+	case h.Format == "PING" || h.Format == "PONG":
+		r.res.SkippedControl++
+		return WSMessage{}, false
+	case sent && !r.opts.IncludeSent:
+		r.res.SkippedSent++
 		return WSMessage{}, false
 	}
 	body, err := base64.StdEncoding.DecodeString(h.Raw)
@@ -746,6 +906,7 @@ func (r *wsReader) keep(n wsNode) (WSMessage, bool) {
 		body = []byte(h.Raw)
 	}
 	if r.opts.SkipBodies[string(body)] {
+		r.res.SkippedBodies++
 		return WSMessage{}, false
 	}
 	return WSMessage{ID: n.ID, Sent: sent, Format: h.Format, Length: h.Length, Data: body}, true
@@ -793,8 +954,6 @@ func (r *wsReader) scan(ctx context.Context) (stop bool, scanned int, err error)
 					m.Data, m.Truncated = bytes.Clone(m.Data[:limit]), true
 				}
 				r.res.Messages = append(r.res.Messages, m)
-			} else {
-				r.res.Skipped++
 			}
 			// An until rule stops at the frame that meets it; without one,
 			// everything already stored is returned (up to Limit).
@@ -863,6 +1022,93 @@ func sleepCtx(ctx context.Context, d time.Duration) error {
 		return ctx.Err()
 	case <-t.C:
 		return nil
+	}
+}
+
+// A Stream has no link back to the replay session that opened it, so
+// WSStreamSessions walks the WS sessions' entries instead, newest first:
+// the streams looked up are usually recent runs, so the walk can stop
+// early.
+const listWSSessionStreamsQuery = `query ListReplayWsSessionStreams($id: ID!, $after: String, $first: Int) {
+  replaySession(id: $id) {
+    ... on ReplaySessionWs {
+      entries(first: $first, after: $after, order: {by: ID, ordering: DESC}) {
+        pageInfo { hasNextPage endCursor }
+        nodes { ... on ReplayEntryWs { stream { id } } }
+      }
+    }
+  }
+}`
+
+type wsSessionStreamsResp struct {
+	ReplaySession *struct {
+		Entries *struct {
+			PageInfo pageInfo `json:"pageInfo"`
+			Nodes    []struct {
+				Stream *idRef `json:"stream"`
+			} `json:"nodes"`
+		} `json:"entries"`
+	} `json:"replaySession"`
+}
+
+// WSStreamSessions maps each of the given stream IDs that a WS replay
+// session opened to that session's ID. Streams not opened from Replay are
+// left out. On error it returns what it mapped so far.
+func WSStreamSessions(
+	ctx context.Context, client *caido.Client, streamIDs []string,
+) (map[string]string, error) {
+	out := make(map[string]string, len(streamIDs))
+	if len(streamIDs) == 0 {
+		return out, nil
+	}
+	want := make(map[string]bool, len(streamIDs))
+	for _, id := range streamIDs {
+		want[id] = true
+	}
+	ids, err := wsSessionIDs(ctx, client)
+	if err != nil {
+		return out, err
+	}
+	for _, id := range ids {
+		if err := mapSessionStreams(ctx, client, id, want, out); err != nil {
+			return out, err
+		}
+		if len(out) == len(want) {
+			break
+		}
+	}
+	return out, nil
+}
+
+// mapSessionStreams pages through one WS session's entries, recording in
+// out each wanted stream it opened, until every wanted stream is mapped.
+func mapSessionStreams(
+	ctx context.Context, client *caido.Client, sessionID string,
+	want map[string]bool, out map[string]string,
+) error {
+	var after *string
+	for {
+		var data wsSessionStreamsResp
+		if err := client.GraphQL.MakeRequest(ctx, &gql.Request{
+			OpName:    "ListReplayWsSessionStreams",
+			Query:     listWSSessionStreamsQuery,
+			Variables: map[string]any{"id": sessionID, "after": after, "first": listPageSize},
+		}, &gql.Response{Data: &data}); err != nil {
+			return fmt.Errorf("list entries of session %s: %w", sessionID, err)
+		}
+		if data.ReplaySession == nil || data.ReplaySession.Entries == nil {
+			return nil
+		}
+		e := data.ReplaySession.Entries
+		for _, n := range e.Nodes {
+			if n.Stream != nil && want[n.Stream.ID] {
+				out[n.Stream.ID] = sessionID
+			}
+		}
+		if len(out) == len(want) || !e.PageInfo.HasNextPage || e.PageInfo.EndCursor == nil {
+			return nil
+		}
+		after = e.PageInfo.EndCursor
 	}
 }
 

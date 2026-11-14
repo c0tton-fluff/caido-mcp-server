@@ -268,3 +268,83 @@ func TestListWsMessagesTool(t *testing.T) {
 		})
 	}
 }
+
+// REPLAY streams are mapped back to the WS replay session that opened them.
+func TestListWsStreamsTool_LinksReplaySessions(t *testing.T) {
+	env := testutil.NewMCPTestEnv(t, func(s *mcp.Server, c *caido.Client) {
+		tools.RegisterListWsStreamsTool(s, c)
+	})
+	env.Mock.ValidateAgainstSchema()
+	page := streamsData(false, "", "st-a", "st-b", "st-x")
+	edges := page["streams"].(map[string]any)["edges"].([]map[string]any)
+	edges[0]["node"].(map[string]any)["source"] = "REPLAY"
+	edges[1]["node"].(map[string]any)["source"] = "REPLAY"
+	env.Mock.On("ListStreams", page)
+	env.Mock.On("ListReplaySessionsTolerant", listReplaySessionsResponse(map[string]any{
+		"__typename": "ReplaySessionWs", "id": "s7", "name": "ws",
+		"activeEntry": map[string]any{"id": "e2"},
+		"collection":  map[string]any{"id": "col-1", "name": "c"},
+	}))
+	env.Mock.On("ListReplayWsSessionStreams", map[string]any{"replaySession": map[string]any{
+		"__typename": "ReplaySessionWs",
+		"entries": map[string]any{
+			"pageInfo": map[string]any{"hasNextPage": false, "endCursor": nil},
+			"nodes": []any{
+				map[string]any{"__typename": "ReplayEntryWs", "stream": map[string]any{"id": "st-a"}},
+				map[string]any{"__typename": "ReplayEntryWs", "stream": map[string]any{"id": "st-b"}},
+			},
+		},
+	}})
+
+	out := testutil.UnmarshalToolResult[tools.ListWsStreamsOutput](t,
+		env.CallTool(t, "caido_list_ws_streams", map[string]any{}))
+	got := map[string]string{}
+	for _, s := range out.Streams {
+		got[s.ID] = s.ReplaySessionID
+	}
+	if got["st-a"] != "s7" || got["st-b"] != "s7" || got["st-x"] != "" {
+		t.Fatalf("want streams st-a and st-b linked to session s7, got %v", got)
+	}
+}
+
+// The lookup follows the entries cursor past the first page.
+func TestListWsStreamsTool_LinksReplaySessionsAcrossPages(t *testing.T) {
+	env := testutil.NewMCPTestEnv(t, func(s *mcp.Server, c *caido.Client) {
+		tools.RegisterListWsStreamsTool(s, c)
+	})
+	env.Mock.ValidateAgainstSchema()
+	page := streamsData(false, "", "st-a")
+	page["streams"].(map[string]any)["edges"].([]map[string]any)[0]["node"].(map[string]any)["source"] = "REPLAY"
+	env.Mock.On("ListStreams", page)
+	env.Mock.On("ListReplaySessionsTolerant", listReplaySessionsResponse(map[string]any{
+		"__typename": "ReplaySessionWs", "id": "s7", "name": "ws",
+		"activeEntry": map[string]any{"id": "e2"},
+		"collection":  map[string]any{"id": "col-1", "name": "c"},
+	}))
+	entries := func(next string, streamID string) map[string]any {
+		var cursor any
+		if next != "" {
+			cursor = next
+		}
+		return map[string]any{"replaySession": map[string]any{
+			"__typename": "ReplaySessionWs",
+			"entries": map[string]any{
+				"pageInfo": map[string]any{"hasNextPage": next != "", "endCursor": cursor},
+				"nodes": []any{map[string]any{
+					"__typename": "ReplayEntryWs", "stream": map[string]any{"id": streamID},
+				}},
+			},
+		}}
+	}
+	env.Mock.On("ListReplayWsSessionStreams", entries("p2", "st-other"))
+	env.Mock.On("ListReplayWsSessionStreams", entries("", "st-a"))
+
+	out := testutil.UnmarshalToolResult[tools.ListWsStreamsOutput](t,
+		env.CallTool(t, "caido_list_ws_streams", map[string]any{}))
+	if len(out.Streams) != 1 || out.Streams[0].ReplaySessionID != "s7" {
+		t.Fatalf("want st-a linked to s7 from the second page, got %+v", out.Streams)
+	}
+	if v := env.Mock.LastVariables("ListReplayWsSessionStreams"); v["after"] != "p2" {
+		t.Fatalf("want the second page requested after p2, got %v", v)
+	}
+}

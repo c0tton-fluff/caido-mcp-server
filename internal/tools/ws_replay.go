@@ -31,6 +31,8 @@ import (
 const (
 	defaultWsConnectTimeoutS = 10
 	maxWsConnectTimeoutS     = 60
+	defaultWsCloseTimeoutS   = 10
+	maxWsCloseTimeoutS       = 60
 	defaultWsHandshakeBody   = 1024
 	maxWsHandshakeBody       = 8192
 	maxWsFrames              = 50
@@ -59,16 +61,28 @@ type WsConnectInput struct {
 	SessionID    string            `json:"sessionId,omitempty" jsonschema:"Reuse this WS replay session: its handshake is replaced and an open connection on it is closed first. Omit to create a session"`
 	CollectionID string            `json:"collectionId,omitempty" jsonschema:"File the session in this replay collection"`
 	Name         string            `json:"name,omitempty" jsonschema:"Tab name for the session"`
+	Reuse        bool              `json:"reuse,omitempty" jsonschema:"When the Caido plan's WebSocket session limit blocks creating a session and exactly one WS session exists, reuse it: moved into collectionId, renamed to name, open connection closed. Its earlier run stays in WS history (previousStreamId)"`
 	Connect      *bool             `json:"connect,omitempty" jsonschema:"Open the socket (default true). false only prepares the tab for a human to click Connect"`
-	TimeoutSec   int               `json:"timeoutSec,omitempty" jsonschema:"Seconds to wait for the handshake response (default 10, max 60)"`
+	TimeoutSec   int               `json:"timeoutSec,omitempty" jsonschema:"Seconds to wait for the handshake response, and on a reused session for Caido to close its open connection (default 10, max 60)"`
 	BodyLimit    int               `json:"bodyLimit,omitempty" jsonschema:"Byte limit for a rejected handshake's response body (default 1024, max 8192)"`
 }
 
 // WsConnectOutput is the output of the ws_connect tool.
 type WsConnectOutput struct {
-	SessionID      string `json:"sessionId"`
-	Created        bool   `json:"created"`
-	ClosedPrevious bool   `json:"closedPrevious,omitempty"`
+	SessionID string `json:"sessionId"`
+	Created   bool   `json:"created"`
+	// Reused is true when reuse=true took the only WS session because the
+	// plan's limit blocked creating one.
+	Reused         bool `json:"reused,omitempty"`
+	ClosedPrevious bool `json:"closedPrevious,omitempty"`
+	// PreviousStreamID is the earlier run a reused session's tab no longer
+	// shows; read it with caido_ws_read streamId.
+	PreviousStreamID string `json:"previousStreamId,omitempty"`
+	// MovedFrom is the collection a reused session was moved out of.
+	MovedFrom      string `json:"movedFrom,omitempty"`
+	Name           string `json:"name,omitempty"`
+	CollectionID   string `json:"collectionId,omitempty"`
+	CollectionName string `json:"collectionName,omitempty"`
 	// Open is true while the socket is connected; pass sessionId to
 	// caido_ws_send / caido_ws_read / caido_ws_close.
 	Open     bool   `json:"open"`
@@ -275,6 +289,7 @@ func wsConnectHandler(
 			Conn:         conn,
 			SkipOpen:     skipOpen,
 			Timeout:      time.Duration(timeout) * time.Second,
+			ReuseOnLimit: in.Reuse,
 		})
 		if err != nil {
 			if c != nil && c.SessionID != "" {
@@ -282,17 +297,27 @@ func wsConnectHandler(
 				if c.ClosedPrevious {
 					err = fmt.Errorf("%w (its previous connection was closed)", err)
 				}
+				if c.PreviousStreamID != "" {
+					err = fmt.Errorf("%w; the earlier run is stream %s (caido_ws_read streamId)",
+						err, c.PreviousStreamID)
+				}
 			}
 			return nil, WsConnectOutput{}, err
 		}
 		out := WsConnectOutput{
-			SessionID:      c.SessionID,
-			Created:        c.Created,
-			ClosedPrevious: c.ClosedPrevious,
-			Open:           c.Open,
-			StreamID:       c.StreamID,
-			StatusCode:     c.StatusCode,
-			Error:          c.Error,
+			SessionID:        c.SessionID,
+			Created:          c.Created,
+			Reused:           c.Reused,
+			ClosedPrevious:   c.ClosedPrevious,
+			PreviousStreamID: c.PreviousStreamID,
+			MovedFrom:        c.MovedFrom,
+			Name:             c.Name,
+			CollectionID:     c.CollectionID,
+			CollectionName:   c.CollectionName,
+			Open:             c.Open,
+			StreamID:         c.StreamID,
+			StatusCode:       c.StatusCode,
+			Error:            c.Error,
 		}
 		if skipOpen {
 			return nil, out, nil
@@ -431,8 +456,12 @@ type WsReadOutput struct {
 	Matched bool `json:"matched"`
 	// Open reports whether the session's connection is still open; absent
 	// when reading by streamId.
-	Open    *bool `json:"open,omitempty"`
-	Skipped int   `json:"skipped,omitempty"`
+	Open *bool `json:"open,omitempty"`
+	// SkippedSent counts client frames left out (includeSent off),
+	// SkippedBodies frames matching skipBodies, SkippedControl PING/PONG.
+	SkippedSent    int `json:"skippedSent,omitempty"`
+	SkippedBodies  int `json:"skippedBodies,omitempty"`
+	SkippedControl int `json:"skippedControl,omitempty"`
 	// More is true when the read stopped at its scan cap with older frames
 	// still unread; read again with cursor.
 	More bool `json:"more,omitempty"`
@@ -554,12 +583,14 @@ func wsReadHandler(
 			open = &closed
 		}
 		out := WsReadOutput{
-			Frames:  make([]WsFrame, 0, len(res.Messages)),
-			Cursor:  res.Cursor,
-			Matched: res.Matched,
-			Open:    open,
-			Skipped: res.Skipped,
-			More:    res.More,
+			Frames:         make([]WsFrame, 0, len(res.Messages)),
+			Cursor:         res.Cursor,
+			Matched:        res.Matched,
+			Open:           open,
+			SkippedSent:    res.SkippedSent,
+			SkippedBodies:  res.SkippedBodies,
+			SkippedControl: res.SkippedControl,
+			More:           res.More,
 		}
 		for _, m := range res.Messages {
 			body, enc, trunc := wsFrameBody(m, bodyLimit)
@@ -580,14 +611,18 @@ func wsReadHandler(
 
 // WsCloseInput is the input for the ws_close tool.
 type WsCloseInput struct {
-	SessionID string `json:"sessionId" jsonschema:"required,WS replay session ID from caido_ws_connect"`
+	SessionID  string `json:"sessionId" jsonschema:"required,WS replay session ID from caido_ws_connect"`
+	TimeoutSec int    `json:"timeoutSec,omitempty" jsonschema:"Seconds to wait for Caido to close the socket (default 10, max 60)"`
 }
 
 // WsCloseOutput is the output of the ws_close tool.
 type WsCloseOutput struct {
 	SessionID string `json:"sessionId"`
-	// Closed is false when no connection was open.
+	// Closed is false when no connection was open or the close timed out.
 	Closed bool `json:"closed"`
+	// TimedOut is true when Caido did not confirm the close within
+	// timeoutSec; the connection may still be open.
+	TimedOut bool `json:"timedOut,omitempty"`
 }
 
 func wsCloseHandler(
@@ -599,11 +634,12 @@ func wsCloseHandler(
 		if in.SessionID == "" {
 			return nil, WsCloseOutput{}, fmt.Errorf("sessionId is required")
 		}
-		closed, err := replay.WSCloseSession(ctx, client, in.SessionID)
+		timeout := clampLimit(in.TimeoutSec, defaultWsCloseTimeoutS, maxWsCloseTimeoutS)
+		res, err := replay.WSCloseSession(ctx, client, in.SessionID, time.Duration(timeout)*time.Second)
 		if err != nil {
 			return nil, WsCloseOutput{}, err
 		}
-		return nil, WsCloseOutput{SessionID: in.SessionID, Closed: closed}, nil
+		return nil, WsCloseOutput{SessionID: in.SessionID, Closed: res.Closed, TimedOut: res.TimedOut}, nil
 	}
 }
 
@@ -616,8 +652,9 @@ func RegisterWsConnectTool(server *mcp.Server, client *caido.Client) {
 		Title: "WebSocket Replay: Connect",
 		Description: `Open a WebSocket through Caido from a WS replay session (Caido 0.59+), so the traffic lands in WS history and a named replay tab. ` +
 			`Give exactly one handshake source: url (+ headers, subprotocols), raw (+ host/port/tls), or requestId of a captured upgrade request. ` +
-			`Returns sessionId (the handle for caido_ws_send / caido_ws_read / caido_ws_close), open, statusCode (101 on success) and response headers; a rejected handshake also returns its body. ` +
-			`Some Caido plans allow a single WS session: pass sessionId to reuse it with a new handshake (an open connection on it is closed first). ` +
+			`Returns sessionId (the handle for caido_ws_send / caido_ws_read / caido_ws_close), open, statusCode (101 on success), response headers, and the name and collectionId the tab is filed under; a rejected handshake also returns its body. ` +
+			`Some Caido plans allow a single WS session: pass reuse=true (moves it into collectionId, renames it to name) or its sessionId to reuse it with a new handshake (an open connection on it is closed first). ` +
+			`Reusing replaces what the tab shows: the earlier run stays in WS history as previousStreamId, readable with caido_ws_read streamId, so cite that stream as evidence before a control run. ` +
 			`connect=false only prepares the tab.`,
 		InputSchema: schemaFor[WsConnectInput](func(s *jsonschema.Schema) {
 			if p := prop(s, "raw"); p != nil {
@@ -661,6 +698,8 @@ func RegisterWsReadTool(server *mcp.Server, client *caido.Client) {
 			`By default returns only server frames, as soon as one arrives or after waitMs (default 3000, max 120000). ` +
 			`untilContains / untilCount wait for a specific frame or number of frames; skipBodies drops keep-alives; PING/PONG are always dropped. ` +
 			`Pass the returned cursor as after to continue where this read stopped; drop it after reconnecting with caido_ws_connect. more=true means the read hit its scan cap with frames left; read again with cursor. open=false means the connection closed. ` +
+			`streamId instead of sessionId reads any recorded run, e.g. the previousStreamId caido_ws_connect returns after reusing a session (includeSent=true shows both directions). ` +
+			`skippedSent / skippedBodies / skippedControl count frames left out as client frames, skipBodies matches, and PING/PONG. ` +
 			`Caveat (Caido 0.59.1): replay recording drops server frames that arrive back to back (under ~20ms apart), so a burst can show fewer frames than were sent.`,
 		Annotations: readOnlyAnn(),
 	}, wsReadHandler(client))
@@ -672,7 +711,7 @@ func RegisterWsCloseTool(server *mcp.Server, client *caido.Client) {
 		Name:  "caido_ws_close",
 		Title: "WebSocket Replay: Close",
 		Description: `Close a session's open WebSocket. Caido closes it without a status code or reason. ` +
-			`closed=false means nothing was open. The session and its frames stay in Replay.`,
+			`closed=false means nothing was open; timedOut=true means Caido did not confirm the close within timeoutSec (default 10) and it may still be open. The session and its frames stay in Replay.`,
 		Annotations: writeAnn(false, true, true),
 	}, wsCloseHandler(client))
 }

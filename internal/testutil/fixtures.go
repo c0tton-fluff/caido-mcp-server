@@ -224,3 +224,13 @@ func GetReplayEntryResponse(entryID, requestID string, statusCode int, body stri
 		},
 	}
 }
+
+// MoveReplaySessionResponse is a moveReplaySession result for a session of
+// the given __typename.
+func MoveReplaySessionResponse(sessionID, typename string) map[string]any {
+	return map[string]any{
+		"moveReplaySession": map[string]any{
+			"session": map[string]any{"__typename": typename, "id": sessionID},
+		},
+	}
+}

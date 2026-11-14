@@ -65,7 +65,25 @@ func (e *userError) describe(kind string) string {
 	return msg
 }
 
-// describeErr is describe as an error value.
+// ErrSessionLimit matches (errors.Is) a refusal caused by the Caido plan's
+// cap on how many sessions of a kind may exist.
+var ErrSessionLimit = errors.New("plan session limit reached")
+
+// limitError is a described refusal that is the plan's session cap. It
+// unwraps to both ErrSessionLimit and the underlying user error.
+type limitError struct {
+	msg   string
+	cause *userError
+}
+
+func (e *limitError) Error() string   { return e.msg }
+func (e *limitError) Unwrap() []error { return []error{ErrSessionLimit, e.cause} }
+
+// describeErr is describe as an error value; a plan cap matches
+// ErrSessionLimit.
 func (e *userError) describeErr(kind string) error {
+	if e.PermissionReason == "ENTITLEMENT" {
+		return &limitError{msg: e.describe(kind), cause: e}
+	}
 	return errors.New(e.describe(kind))
 }

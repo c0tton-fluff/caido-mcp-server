@@ -502,13 +502,7 @@ func TestWsConnect_Errors(t *testing.T) {
 			name: "plan cap explained",
 			args: map[string]any{"url": "ws://h/"},
 			mock: func(env *testutil.MCPTestEnv) {
-				env.Mock.On("CreateReplaySession", map[string]any{"createReplaySession": map[string]any{
-					"session": nil,
-					"error": map[string]any{
-						"__typename": "PermissionDeniedUserError", "code": "PERMISSION_DENIED",
-						"permissionReason": "ENTITLEMENT",
-					},
-				}})
+				env.Mock.On("CreateReplaySession", wsLimitRefusal())
 			},
 			want: "limit on WebSocket sessions",
 		},
@@ -637,8 +631,11 @@ func TestWsRead_FiltersAndTranslatesDirection(t *testing.T) {
 		t.Fatalf("unexpected error: %+v", result.Content)
 	}
 	out := testutil.UnmarshalToolResult[WsReadOutput](t, result)
-	if len(out.Frames) != 2 || out.Skipped != 3 || out.Cursor != "c5" || !out.Matched {
-		t.Fatalf("want 2 frames (ack, binary) and 3 skipped, got %+v", out)
+	if len(out.Frames) != 2 || out.Cursor != "c5" || !out.Matched {
+		t.Fatalf("want 2 frames (ack, binary), got %+v", out)
+	}
+	if out.SkippedSent != 1 || out.SkippedBodies != 1 || out.SkippedControl != 1 {
+		t.Fatalf("want one frame skipped per reason, got %+v", out)
 	}
 	if f := out.Frames[0]; f.Direction != "received" || f.Body != `{"type":"connection_ack"}` {
 		t.Fatalf("unexpected first frame %+v", f)
@@ -729,7 +726,7 @@ func TestWsRead_StopsAtScanCap(t *testing.T) {
 	out := testutil.UnmarshalToolResult[WsReadOutput](t, env.CallTool(t, "caido_ws_read", map[string]any{
 		"streamId": "st1",
 	}))
-	if !out.More || out.Matched || out.Skipped != 10000 || out.Cursor == "" {
+	if !out.More || out.Matched || out.SkippedControl != 10000 || out.Cursor == "" {
 		t.Fatalf("want more=true after 10000 skipped frames, got %+v", out)
 	}
 }
@@ -830,4 +827,230 @@ func toolText(r *mcp.CallToolResult) string {
 		return tc.Text
 	}
 	return ""
+}
+
+// wsSessionIn is wsSession with the name and collection the session is
+// filed under.
+func wsSessionIn(id, streamID, name, colID string) map[string]any {
+	s := wsSession(id, "h1", "e1", streamID)
+	rs := s["replaySession"].(map[string]any)
+	rs["name"] = name
+	rs["collection"] = map[string]any{"id": colID, "name": "col " + colID}
+	return s
+}
+
+// wsSessionList is a ListReplaySessionsTolerant result of WS sessions.
+func wsSessionList(ids ...string) map[string]any {
+	edges := make([]any, len(ids))
+	for i, id := range ids {
+		edges[i] = map[string]any{"node": map[string]any{
+			"__typename": "ReplaySessionWs", "id": id, "name": id,
+			"activeEntry": map[string]any{"id": "e-" + id},
+			"collection":  map[string]any{"id": "col-0", "name": "Default"},
+		}}
+	}
+	return map[string]any{"replaySessions": map[string]any{
+		"edges": edges, "pageInfo": map[string]any{"hasNextPage": false, "endCursor": nil},
+	}}
+}
+
+func wsLimitRefusal() map[string]any {
+	return map[string]any{"createReplaySession": map[string]any{
+		"session": nil,
+		"error": map[string]any{
+			"__typename": "PermissionDeniedUserError", "code": "PERMISSION_DENIED",
+			"permissionReason": "ENTITLEMENT",
+		},
+	}}
+}
+
+// Caido can leave stopReplayWsTasks unanswered for a socket the server
+// keeps open; the close must give up instead of blocking.
+func TestWsClose_TimesOutWhenCaidoNeverAnswers(t *testing.T) {
+	env := newWsEnv(t)
+	env.Mock.On("ListReplayWsTasks", wsTasks("s1", "t1", "e1", "st1"))
+	env.Mock.Hang("StopReplayWsTasks")
+
+	start := time.Now()
+	result := env.CallTool(t, "caido_ws_close", map[string]any{"sessionId": "s1", "timeoutSec": 1})
+	if elapsed := time.Since(start); elapsed > 5*time.Second {
+		t.Fatalf("close must give up after timeoutSec, took %v", elapsed)
+	}
+	if result.IsError {
+		t.Fatalf("unexpected error: %s", toolText(result))
+	}
+	out := testutil.UnmarshalToolResult[WsCloseOutput](t, result)
+	if out.Closed || !out.TimedOut {
+		t.Fatalf("want closed=false timedOut=true, got %+v", out)
+	}
+}
+
+// An unanswered stop that still took effect counts as closed.
+func TestWsClose_UnansweredStopThatTookEffect(t *testing.T) {
+	env := newWsEnv(t)
+	env.Mock.On("ListReplayWsTasks", wsTasks("s1", "t1", "e1", "st1"))
+	env.Mock.On("ListReplayWsTasks", wsTasks("s1", "", "", ""))
+	env.Mock.Hang("StopReplayWsTasks")
+
+	out := testutil.UnmarshalToolResult[WsCloseOutput](t,
+		env.CallTool(t, "caido_ws_close", map[string]any{"sessionId": "s1", "timeoutSec": 1}))
+	if !out.Closed || out.TimedOut {
+		t.Fatalf("want closed=true, got %+v", out)
+	}
+}
+
+// A reconnect whose close of the old socket goes unanswered fails instead
+// of hanging, and starts nothing.
+func TestWsConnect_UnansweredCloseFails(t *testing.T) {
+	env := newWsEnv(t)
+	mockReseed(env)
+	env.Mock.On("ListReplayWsTasks", wsTasks("s1", "t-old", "e1", "st1"))
+	env.Mock.Hang("StopReplayWsTasks")
+
+	result := env.CallTool(t, "caido_ws_connect", map[string]any{"sessionId": "s1", "url": "ws://h/", "timeoutSec": 1})
+	text := toolText(result)
+	if !result.IsError || !strings.Contains(text, "did not close its open connection") ||
+		strings.Contains(text, "session s1: session s1") {
+		t.Fatalf("want one close timeout error, got %s", text)
+	}
+	// The old connection is still open and still the tab's run, so no
+	// stream is called earlier.
+	if strings.Contains(text, "earlier run") {
+		t.Fatalf("the current run must not be called earlier, got %s", text)
+	}
+	if env.Mock.LastVariables("StartReplayWsTask") != nil {
+		t.Fatal("must not start a task while the old one is still open")
+	}
+}
+
+// Reusing a session reports the run the tab no longer shows and where the
+// session is filed now.
+func TestWsConnect_ReuseReportsPreviousRunAndFiling(t *testing.T) {
+	env := newWsEnv(t)
+	env.Mock.On("GetReplayWsSession", wsSessionIn("s1", "st-old", "run A", "col-0"))
+	env.Mock.On("GetReplayWsSession", wsSessionIn("s1", "st-new", "run B", "col-1"))
+	env.Mock.On("UpdateReplayWsHandshake", wsDrafted())
+	env.Mock.On("RenameReplaySession", testutil.RenameReplaySessionResponse("s1", "run B"))
+	env.Mock.On("MoveReplaySession", testutil.MoveReplaySessionResponse("s1", "ReplaySessionWs"))
+	env.Mock.On("ListReplayWsTasks", wsTasks("s1", "", "", ""))
+	env.Mock.On("StartReplayWsTask", wsStarted("t2", "e2"))
+	env.Mock.On("GetReplayWsEntry", wsEntry("st-new", 101, upgraded, "t2"))
+
+	result := env.CallTool(t, "caido_ws_connect", map[string]any{
+		"sessionId": "s1", "url": "ws://h/", "name": "run B", "collectionId": "col-1",
+	})
+	if result.IsError {
+		t.Fatalf("unexpected error: %s", toolText(result))
+	}
+	out := testutil.UnmarshalToolResult[WsConnectOutput](t, result)
+	if out.PreviousStreamID != "st-old" || out.MovedFrom != "col-0" || out.StreamID != "st-new" {
+		t.Fatalf("want previousStreamId st-old, movedFrom col-0, stream st-new, got %+v", out)
+	}
+	if out.Name != "run B" || out.CollectionID != "col-1" || out.CollectionName != "col col-1" {
+		t.Fatalf("want the filing after the call, got %+v", out)
+	}
+}
+
+// With the plan's WS session cap reached and one WS session left,
+// reuse=true takes that session and files it where asked.
+func TestWsConnect_ReuseOnPlanLimit(t *testing.T) {
+	env := newWsEnv(t)
+	env.Mock.On("CreateReplaySession", wsLimitRefusal())
+	env.Mock.On("ListReplaySessionsTolerant", wsSessionList("s7"))
+	env.Mock.On("GetReplayWsSession", wsSessionIn("s7", "st-old", "old", "col-0"))
+	env.Mock.On("GetReplayWsSession", wsSessionIn("s7", "st-new", "run B", "col-1"))
+	env.Mock.On("UpdateReplayWsHandshake", wsDrafted())
+	env.Mock.On("RenameReplaySession", testutil.RenameReplaySessionResponse("s7", "run B"))
+	env.Mock.On("MoveReplaySession", testutil.MoveReplaySessionResponse("s7", "ReplaySessionWs"))
+	env.Mock.On("ListReplayWsTasks", wsTasks("s7", "t-old", "e1", "st-old"))
+	env.Mock.On("ListReplayWsTasks", wsTasks("s7", "", "", ""))
+	env.Mock.On("StopReplayWsTasks", wsStopped())
+	env.Mock.On("StartReplayWsTask", wsStarted("t2", "e2"))
+	env.Mock.On("GetReplayWsEntry", wsEntry("st-new", 101, upgraded, "t2"))
+
+	result := env.CallTool(t, "caido_ws_connect", map[string]any{
+		"url": "ws://h/", "name": "run B", "collectionId": "col-1", "reuse": true,
+	})
+	if result.IsError {
+		t.Fatalf("unexpected error: %s", toolText(result))
+	}
+	out := testutil.UnmarshalToolResult[WsConnectOutput](t, result)
+	if out.SessionID != "s7" || out.Created || !out.Reused || !out.ClosedPrevious || out.MovedFrom != "col-0" {
+		t.Fatalf("want session s7 reused and moved from col-0, got %+v", out)
+	}
+	if v := env.Mock.LastVariables("MoveReplaySession"); v["collectionId"] != "col-1" {
+		t.Fatalf("want the session moved into col-1, got %v", v)
+	}
+	if v := env.Mock.LastVariables("RenameReplaySession"); v["name"] != "run B" {
+		t.Fatalf("want the session renamed, got %v", v)
+	}
+}
+
+func TestWsConnect_PlanLimitWithoutReuse(t *testing.T) {
+	runToolErrCases(t, "caido_ws_connect", []toolErrCase{
+		{
+			name: "suggests reuse of the only session",
+			args: map[string]any{"url": "ws://h/"},
+			mock: func(env *testutil.MCPTestEnv) {
+				env.Mock.On("CreateReplaySession", wsLimitRefusal())
+				env.Mock.On("ListReplaySessionsTolerant", wsSessionList("s7"))
+			},
+			want: "pass reuse=true to reuse the only WS session s7",
+		},
+		{
+			name: "reuse refused with several sessions",
+			args: map[string]any{"url": "ws://h/", "reuse": true},
+			mock: func(env *testutil.MCPTestEnv) {
+				env.Mock.On("CreateReplaySession", wsLimitRefusal())
+				env.Mock.On("ListReplaySessionsTolerant", wsSessionList("s7", "s8"))
+			},
+			want: "reuse=true needs exactly one WS session",
+		},
+	})
+}
+
+// The lookup of the open task shares the close deadline, so a Caido that
+// answers nothing still lets the close return.
+func TestWsClose_UnansweredLookupTimesOut(t *testing.T) {
+	env := newWsEnv(t)
+	env.Mock.Hang("ListReplayWsTasks")
+
+	start := time.Now()
+	out := testutil.UnmarshalToolResult[WsCloseOutput](t,
+		env.CallTool(t, "caido_ws_close", map[string]any{"sessionId": "s1", "timeoutSec": 1}))
+	if elapsed := time.Since(start); elapsed > 5*time.Second {
+		t.Fatalf("close must give up after timeoutSec, took %v", elapsed)
+	}
+	if out.Closed || !out.TimedOut {
+		t.Fatalf("want closed=false timedOut=true, got %+v", out)
+	}
+}
+
+// Once the old connection is closed the tab is about to show a new run, so
+// a reconnect that fails from there names the earlier run's stream.
+func TestWsConnect_FailedStartNamesEarlierRun(t *testing.T) {
+	env := newWsEnv(t)
+	mockReseed(env)
+	env.Mock.On("ListReplayWsTasks", wsTasks("s1", "t-old", "e1", "st1"))
+	env.Mock.On("StopReplayWsTasks", wsStopped())
+	// No StartReplayWsTask mock: the start fails.
+
+	result := env.CallTool(t, "caido_ws_connect", map[string]any{"sessionId": "s1", "url": "ws://h/"})
+	text := toolText(result)
+	if !result.IsError || !strings.Contains(text, "earlier run is stream st1") ||
+		!strings.Contains(text, "previous connection was closed") {
+		t.Fatalf("want the failure to name the closed earlier run, got %s", text)
+	}
+}
+
+func TestWsConnect_PlanLimitListingFails(t *testing.T) {
+	runToolErrCases(t, "caido_ws_connect", []toolErrCase{{
+		name: "listing ws sessions fails",
+		args: map[string]any{"url": "ws://h/", "reuse": true},
+		mock: func(env *testutil.MCPTestEnv) {
+			env.Mock.On("CreateReplaySession", wsLimitRefusal())
+			// No ListReplaySessionsTolerant mock: the listing fails.
+		},
+		want: "listing WS sessions failed",
+	}})
 }

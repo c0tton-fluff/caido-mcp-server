@@ -359,9 +359,10 @@ Drive a WebSocket (e.g. a graphql-ws subscription) through Caido: the socket is 
 | | `raw` + `host`/`port`/`tls` | Or a full raw upgrade request |
 | | `requestId` | Or a captured upgrade request from history |
 | | `sessionId` | Reuse a WS session with the new handshake (closes an open connection on it). Some Caido plans allow a single WS session |
+| | `reuse` | When the plan's WS session limit blocks creating one and exactly one WS session exists, reuse it (moved into `collectionId`, renamed to `name`) |
 | | `collectionId` / `name` | File and title the session |
 | | `connect` | `false` only prepares the tab (default true) |
-| | `timeoutSec` | Handshake wait (default 10, max 60) |
+| | `timeoutSec` | Handshake wait, and on a reused session the wait for its open connection to close (default 10, max 60) |
 | `caido_ws_send` | `frames` | 1..50 `{body, format: TEXT\|BINARY, base64}` sent in order |
 | | `delayMs` | Pause between frames (max 10000) |
 | `caido_ws_read` | `after` | Cursor from the previous read; drop it after reconnecting |
@@ -370,9 +371,9 @@ Drive a WebSocket (e.g. a graphql-ws subscription) through Caido: the socket is 
 | | `skipBodies` | Drop exact bodies such as keep-alives; PING/PONG are always dropped |
 | | `includeSent` | Also return client frames (default: server frames only) |
 | | `limit` / `bodyLimit` | Frames per read (default 50, max 200) / bytes per frame body (default 4096, max 65536) |
-| `caido_ws_close` | | Returns `closed: false` when nothing was open; Caido's API sends no status code or reason |
+| `caido_ws_close` | `timeoutSec` | Wait for Caido to close the socket (default 10, max 60). `closed: false` means nothing was open; `timedOut: true` that the close was not confirmed and the socket may still be open. Caido's API sends no status code or reason |
 
-`caido_ws_connect` returns `statusCode` (101 on success), response headers, `open`, and the body of a rejected handshake; `error` when the connection failed before any response (refused, DNS, TLS), `pending` when `timeoutSec` passed first. `caido_ws_read` frames carry `direction` `sent`/`received`; `more: true` means the read hit its scan cap with frames left (read again with the cursor), `open: false` that the connection closed. Caveat: Caido 0.59.1 replay recording drops server frames that arrive back to back (under ~20ms apart).
+`caido_ws_connect` returns `statusCode` (101 on success), response headers, `open`, and the body of a rejected handshake; `error` when the connection failed before any response (refused, DNS, TLS), `pending` when `timeoutSec` passed first. It also returns the `name`, `collectionId` and `collectionName` the session is filed under; on a reused session, `previousStreamId` is the earlier run the tab no longer shows (read it with `caido_ws_read streamId`), `movedFrom` the collection it left, and `reused` that `reuse=true` took it. `caido_ws_read` frames carry `direction` `sent`/`received`; `more: true` means the read hit its scan cap with frames left (read again with the cursor), `open: false` that the connection closed; `skippedSent` / `skippedBodies` / `skippedControl` count frames left out as client frames, `skipBodies` matches and PING/PONG. `caido_list_ws_streams` adds `replaySessionId` to streams opened from a WS replay session. Caveat: Caido 0.59.1 replay recording drops server frames that arrive back to back (under ~20ms apart).
 
 #### caido_get_replay_entry
 

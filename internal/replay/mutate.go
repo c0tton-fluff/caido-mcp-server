@@ -2,7 +2,9 @@ package replay
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
+	"os"
 
 	gql "github.com/Khan/genqlient/graphql"
 	caido "github.com/caido-community/sdk-go"
@@ -23,6 +25,13 @@ const renameSessionMutation = `mutation RenameReplaySession($id: ID!, $name: Str
 const moveSessionMutation = `mutation MoveReplaySession($id: ID!, $collectionId: ID!) {
   moveReplaySession(id: $id, collectionId: $collectionId) {
     session { __typename id }
+  }
+}`
+
+const createSessionMutation = `mutation CreateReplaySession($input: CreateReplaySessionInput!) {
+  createReplaySession(input: $input) {
+    session { __typename id name }
+    error { ` + userErrorSelection + ` }
   }
 }`
 
@@ -77,4 +86,71 @@ func MoveSession(
 		return "", fmt.Errorf("session %s not found", id)
 	}
 	return s.ID, nil
+}
+
+// CreateSession creates a replay session from a CreateReplaySessionInput
+// (kind HTTP or WS, optional requestSource and collectionId) and returns
+// its ID. Unlike sdk-go's CreateSession it reads the error union, so a
+// refusal such as the plan's cap on WS sessions is reported instead of
+// "returned no session".
+func CreateSession(
+	ctx context.Context, client *caido.Client, input map[string]any,
+) (string, error) {
+	var data struct {
+		CreateReplaySession struct {
+			Session *sessionRef `json:"session"`
+			Error   *userError  `json:"error"`
+		} `json:"createReplaySession"`
+	}
+	if err := client.GraphQL.MakeRequest(ctx, &gql.Request{
+		OpName:    "CreateReplaySession",
+		Query:     createSessionMutation,
+		Variables: map[string]any{"input": input},
+	}, &gql.Response{Data: &data}); err != nil {
+		return "", err
+	}
+	p := data.CreateReplaySession
+	if p.Error != nil {
+		kind, _ := input["kind"].(string)
+		return "", p.Error.describeErr(kind)
+	}
+	if p.Session == nil {
+		return "", fmt.Errorf("create replay session returned no session")
+	}
+	return p.Session.ID, nil
+}
+
+// connectionInput is the ConnectionInfoInput for c.
+func connectionInput(c caido.ReplayConnection) map[string]any {
+	return map[string]any{"host": c.Host, "port": c.Port, "isTLS": c.IsTLS}
+}
+
+// rawRequestSource is the raw member of RequestSourceInput: a plain-text
+// request and where to send it. Built as a map because genqlient mishandles
+// @oneOf inputs (see create_tamper_rule.go).
+func rawRequestSource(raw string, c caido.ReplayConnection) map[string]any {
+	return map[string]any{"raw": map[string]any{
+		"raw":            base64.StdEncoding.EncodeToString([]byte(raw)),
+		"connectionInfo": connectionInput(c),
+	}}
+}
+
+// CreateNamedSession is CreateSession followed by a rename when name is set.
+// A failed rename deletes the new session, so no unnamed session is left
+// behind with an ID the caller never learns.
+func CreateNamedSession(
+	ctx context.Context, client *caido.Client, input map[string]any, name string,
+) (string, error) {
+	id, err := CreateSession(ctx, client, input)
+	if err != nil || name == "" {
+		return id, err
+	}
+	if _, _, err := RenameSession(ctx, client, id, name); err != nil {
+		if _, delErr := client.Replay.DeleteSessions(ctx, []string{id}); delErr != nil {
+			fmt.Fprintf(os.Stderr,
+				"replay: failed to delete orphaned session %s: %v\n", id, delErr)
+		}
+		return "", fmt.Errorf("rename session %s: %w", id, err)
+	}
+	return id, nil
 }

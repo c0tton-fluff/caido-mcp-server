@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [4.5.0] - 2026-11-14
+
+WebSocket replay: open, drive and read a WebSocket through Caido from an MCP session, and the fix for WS replay sessions that could not be created. Needs Caido 0.59+ for the new tools; verified against a live 0.59.1 server.
+
+### Added
+- **WebSocket replay: `caido_ws_connect`, `caido_ws_send`, `caido_ws_read`, `caido_ws_close`** (Caido 0.59+). Open a socket through a WS Replay session from a URL (with headers and sub-protocols), a raw upgrade request, or a captured history request; send frames; long-poll pushed frames with `untilContains` / `untilCount`, keep-alive skipping and a resume cursor; close. Traffic lands in WS history and the named replay tab. `sessionId` reuses a session with a new handshake, for plans that allow a single WS session. Verified against a live 0.59.1 server with a graphql-ws style endpoint.
+
+### Fixed
+- **`caido_create_replay_session kind=WS` failed with "create replay session returned no session".** sdk-go dropped the error union; the real cause was the Caido plan's cap on WS sessions (`PermissionDeniedUserError (ENTITLEMENT)`). The tool now reports it, with how to reuse a session.
+- **`caido_race_pipeline` start refusals named no reason.** Starting a pipeline run now reports the permission or cloud reason Caido gives, as creating one already did.
+
 ## [4.4.0] - 2026-10-29
 
 Caido 0.58/0.59 support: native race testing through Replay Pipelines, TLS pass-through control, cURL input, and fixes found by testing against a live 0.59.0 server. Works with Caido 0.57+; `caido_race_pipeline` and `caido_passthrough_options` need 0.59.

@@ -5,6 +5,9 @@ import (
 	"fmt"
 )
 
+// B64 base64-encodes s, the way Caido serializes a Blob.
+func B64(s string) string { return base64.StdEncoding.EncodeToString([]byte(s)) }
+
 func RawHTTPResponse(status int, body string) string {
 	raw := fmt.Sprintf(
 		"HTTP/1.1 %d OK\r\nContent-Type: text/html\r\nContent-Length: %d\r\n\r\n%s",
@@ -218,6 +221,16 @@ func GetReplayEntryResponse(entryID, requestID string, statusCode int, body stri
 					"length":        len(body),
 				},
 			},
+		},
+	}
+}
+
+// MoveReplaySessionResponse is a moveReplaySession result for a session of
+// the given __typename.
+func MoveReplaySessionResponse(sessionID, typename string) map[string]any {
+	return map[string]any{
+		"moveReplaySession": map[string]any{
+			"session": map[string]any{"__typename": typename, "id": sessionID},
 		},
 	}
 }

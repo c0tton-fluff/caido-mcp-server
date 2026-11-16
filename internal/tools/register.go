@@ -179,6 +179,7 @@ var toolGroups = []toolGroup{
 			RegisterListTasksTool,
 			RegisterCancelTaskTool,
 			RegisterListPluginsTool,
+			RegisterCallPluginTool,
 		},
 	},
 }

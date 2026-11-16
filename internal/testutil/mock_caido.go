@@ -4,16 +4,34 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"strings"
 	"sync"
 )
 
 type MockHandler struct {
-	mu            sync.Mutex
-	responses     map[string][]json.RawMessage
-	lastVariables map[string]map[string]any
-	calls         map[string]int
-	hang          map[string]bool
-	validate      bool
+	mu              sync.Mutex
+	responses       map[string][]json.RawMessage
+	lastVariables   map[string]map[string]any
+	calls           map[string]int
+	hang            map[string]bool
+	validate        bool
+	pluginResponses []mockPluginResponse
+	pluginCalls     []PluginCallRecord
+}
+
+// PluginCallRecord is one POST to /plugin/backend/{id}/function seen by the
+// mock, decoded from the plugin RPC request body.
+type PluginCallRecord struct {
+	BackendID     string
+	Name          string
+	Args          []string
+	Authorization string
+}
+
+// mockPluginResponse is a queued response for the plugin RPC route.
+type mockPluginResponse struct {
+	status int
+	body   string
 }
 
 func NewMockHandler() *MockHandler {
@@ -31,6 +49,30 @@ func (m *MockHandler) Hang(operationName string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.hang[operationName] = true
+}
+
+// OnPluginCall queues a response for the plugin function route
+// (POST /plugin/backend/{id}/function). Like On, the last response is kept
+// for repeated calls.
+func (m *MockHandler) OnPluginCall(status int, body string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.pluginResponses = append(m.pluginResponses, mockPluginResponse{
+		status: status,
+		body:   body,
+	})
+}
+
+// LastPluginCall returns the most recent plugin RPC request the mock served,
+// or nil if none arrived.
+func (m *MockHandler) LastPluginCall() *PluginCallRecord {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if len(m.pluginCalls) == 0 {
+		return nil
+	}
+	call := m.pluginCalls[len(m.pluginCalls)-1]
+	return &call
 }
 
 // ValidateAgainstSchema makes the mock check every incoming query and its
@@ -63,6 +105,12 @@ func (m *MockHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		Query         string         `json:"query"`
 		Variables     map[string]any `json:"variables"`
 	}
+	if r.Method == http.MethodPost &&
+		strings.HasPrefix(r.URL.Path, "/plugin/backend/") {
+		m.servePluginCall(w, r, body)
+		return
+	}
+
 	if err := json.Unmarshal(body, &req); err != nil {
 		http.Error(w, "invalid json", http.StatusBadRequest)
 		return
@@ -122,6 +170,42 @@ func (m *MockHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(map[string]json.RawMessage{
 		"data": resp,
 	})
+}
+
+// servePluginCall records and answers one plugin backend function call.
+func (m *MockHandler) servePluginCall(
+	w http.ResponseWriter, r *http.Request, body []byte,
+) {
+	var call struct {
+		Name string   `json:"name"`
+		Args []string `json:"args"`
+	}
+	_ = json.Unmarshal(body, &call)
+
+	rec := PluginCallRecord{
+		BackendID: strings.TrimSuffix(
+			strings.TrimPrefix(r.URL.Path, "/plugin/backend/"),
+			"/function",
+		),
+		Name:          call.Name,
+		Args:          call.Args,
+		Authorization: r.Header.Get("Authorization"),
+	}
+
+	m.mu.Lock()
+	m.pluginCalls = append(m.pluginCalls, rec)
+	resp := mockPluginResponse{status: http.StatusInternalServerError}
+	if len(m.pluginResponses) > 0 {
+		resp = m.pluginResponses[0]
+		if len(m.pluginResponses) > 1 {
+			m.pluginResponses = m.pluginResponses[1:]
+		}
+	}
+	m.mu.Unlock()
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(resp.status)
+	_, _ = w.Write([]byte(resp.body))
 }
 
 // LastVariables returns the most recently decoded GraphQL "variables" object

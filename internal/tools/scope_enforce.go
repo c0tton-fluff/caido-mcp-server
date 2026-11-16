@@ -18,7 +18,8 @@ import (
 // is handed to Caido (or to the raw socket), so no input shape goes around
 // it. What it does not cover: traffic the server does not address itself,
 // i.e. forwarding an intercepted browser request, starting an Automate
-// session a human configured, or running a workflow.
+// session a human configured, running a workflow, or calling a plugin
+// backend function (the plugin chooses its own targets).
 
 // scopeLockedTools are withheld while scope is enforced: each one can
 // change which hosts count as in scope (editing scopes, or switching to a

@@ -22,6 +22,9 @@ Four contributions from David Carliez that make captured traffic easier for an a
 ### Security
 - **`gorilla/websocket` bumped past GO-2026-6278.** v1.5.3 generated WebSocket mask keys with a weak random source; the login flow dials Caido over a WebSocket through this library. Pinned to the upstream commit that carries the fix (`v1.5.4-0.20240701034025-d67f41855da4`), since no tagged release includes it yet.
 
+### Added
+- **`caido_call_plugin` drives installed plugin backends.** Caido plugins register backend functions (`sdk.api.register`) and serve them at `POST /plugin/backend/{id}/function`, which had no MCP surface: an agent had to hand-roll the REST call with the access token. The new tool resolves the plugin by package manifestId, name, package id or backend id (`caido_list_plugins` now reports `manifestId` and the backend's `{id, running, error}`), encodes each argument as its own JSON string, and returns the function's `returns` value parsed as JSON, capped by `maxBytes`. Failures map to what fixes them: an unknown plugin lists the installed manifestIds, a stopped backend or HTTP 500 says a Caido restart is needed. `auth.ResolveAccessToken` supplies the bearer token for that route. Scope enforcement cannot see what a plugin function does, so the tool says so and `scope_enforce.go` lists it as not covered.
+
 ## [4.5.0] - 2026-11-16
 
 Safety modes for handing the server to an agent, WebSocket replay, and a tool list that can shrink to a quarter of its size. Scope enforcement, read-only mode and secret redaction decide what an agent is able to do instead of trusting it to behave. Works with Caido 0.57+; the WebSocket replay tools need 0.59. Verified against a live Caido 0.59.1 server. 76 MCP tools, 6 resources.

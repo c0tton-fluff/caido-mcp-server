@@ -4,8 +4,17 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [4.5.0] - 2026-11-14
+
+WebSocket replay: open, drive and read a WebSocket through Caido from an MCP session, and the fix for WS replay sessions that could not be created. Needs Caido 0.59+ for the new tools; verified against a live 0.59.1 server.
+
 ### Added
+- **WebSocket replay: `caido_ws_connect`, `caido_ws_send`, `caido_ws_read`, `caido_ws_close`** (Caido 0.59+). Open a socket through a WS Replay session from a URL (with headers and sub-protocols), a raw upgrade request, or a captured history request; send frames; long-poll pushed frames with `untilContains` / `untilCount`, keep-alive skipping and a resume cursor; close. Traffic lands in WS history and the named replay tab. `sessionId` reuses a session with a new handshake, for plans that allow a single WS session. Verified against a live 0.59.1 server with a graphql-ws style endpoint.
 - **`caido_list_requests` can sort, and reports the total.** New `orderBy` (`id`, `createdAt`, `host`, `method`, `path`, `query`, `fileExtension`, `source`, `statusCode`, `roundtripTime`, `responseLength`) and `order` (`asc`/`desc`) parameters map onto Caido's `requests(order:)`, so the newest N is one call (`{"limit": 5, "order": "desc"}`) instead of paging from the oldest row. The response gains `totalCount`, the number of requests matching `httpql`, taken from the `count` the query already returned and the tool was discarding; `{"limit": 1}` plus `totalCount` counts matches without paging. Cursors keep the requested order, so `after` continues where `nextCursor` left off. Calls that pass neither parameter send the same query as before.
+
+### Fixed
+- **`caido_create_replay_session kind=WS` failed with "create replay session returned no session".** sdk-go dropped the error union; the real cause was the Caido plan's cap on WS sessions (`PermissionDeniedUserError (ENTITLEMENT)`). The tool now reports it, with how to reuse a session.
+- **`caido_race_pipeline` start refusals named no reason.** Starting a pipeline run now reports the permission or cloud reason Caido gives, as creating one already did.
 
 ## [4.4.0] - 2026-10-29
 

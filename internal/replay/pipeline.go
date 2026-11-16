@@ -2,7 +2,6 @@ package replay
 
 import (
 	"context"
-	"encoding/base64"
 	"fmt"
 	"os"
 	"time"
@@ -41,19 +40,14 @@ const (
 const createPipelineMutation = `mutation CreateReplayPipelineSession($input: CreateReplayPipelineSessionInput!) {
   createReplayPipelineHttpSession(input: $input) {
     session { id }
-    error {
-      __typename
-      ... on UserError { code }
-      ... on PermissionDeniedUserError { permissionReason: reason }
-      ... on CloudUserError { cloudReason: reason }
-    }
+    error { ` + userErrorSelection + ` }
   }
 }`
 
 const startPipelineMutation = `mutation StartReplayPipelineTask($sessionId: ID!) {
   startReplayTask(sessionId: $sessionId) {
     task { id replayEntry { id } }
-    error { __typename ... on UserError { code } }
+    error { ` + userErrorSelection + ` }
   }
 }`
 
@@ -145,31 +139,6 @@ func strategyInput(o PipelineOptions) (map[string]any, error) {
 	)
 }
 
-type userErrorRef struct {
-	Typename         string `json:"__typename"`
-	Code             string `json:"code"`
-	PermissionReason string `json:"permissionReason"`
-	CloudReason      string `json:"cloudReason"`
-}
-
-func (e *userErrorRef) String() string {
-	msg := e.Typename
-	if e.Code != "" {
-		msg += ": " + e.Code
-	}
-	if reason := e.PermissionReason + e.CloudReason; reason != "" {
-		msg += " (" + reason + ")"
-	}
-	if e.PermissionReason == "ENTITLEMENT" {
-		// Seen live on 0.59.0: the plan caps how many pipeline sessions
-		// may exist; deleting one let the next create succeed.
-		msg += "; the Caido plan's limit on pipeline sessions is reached, " +
-			"delete an old pipeline session (caido_list_replay_sessions, " +
-			"kind pipeline) or upgrade the plan"
-	}
-	return msg
-}
-
 // RunPipeline creates a pipeline session holding reqs, optionally files and
 // names it, starts it, and waits up to opts.Timeout for every request to
 // resolve.
@@ -186,12 +155,7 @@ func RunPipeline(
 	}
 	sources := make([]map[string]any, len(reqs))
 	for i, r := range reqs {
-		sources[i] = map[string]any{"raw": map[string]any{
-			"raw": base64.StdEncoding.EncodeToString([]byte(r.Raw)),
-			"connectionInfo": map[string]any{
-				"host": r.Conn.Host, "port": r.Conn.Port, "isTLS": r.Conn.IsTLS,
-			},
-		}}
+		sources[i] = rawRequestSource(r.Raw, r.Conn)
 	}
 	input := map[string]any{
 		"requestSources": sources,
@@ -206,7 +170,7 @@ func RunPipeline(
 			Session *struct {
 				ID string `json:"id"`
 			} `json:"session"`
-			Error *userErrorRef `json:"error"`
+			Error *userError `json:"error"`
 		} `json:"createReplayPipelineHttpSession"`
 	}
 	if err := client.GraphQL.MakeRequest(ctx, &gql.Request{
@@ -220,7 +184,7 @@ func RunPipeline(
 	}
 	payload := created.CreateReplayPipelineHttpSession
 	if payload.Error != nil {
-		return nil, fmt.Errorf("create pipeline session: %s", payload.Error)
+		return nil, fmt.Errorf("create pipeline session: %w", payload.Error.describeErr("pipeline"))
 	}
 	if payload.Session == nil {
 		return nil, fmt.Errorf("create pipeline session returned no session")
@@ -250,7 +214,7 @@ func RunPipeline(
 					ID string `json:"id"`
 				} `json:"replayEntry"`
 			} `json:"task"`
-			Error *userErrorRef `json:"error"`
+			Error *userError `json:"error"`
 		} `json:"startReplayTask"`
 	}
 	if err := client.GraphQL.MakeRequest(ctx, &gql.Request{
@@ -262,7 +226,7 @@ func RunPipeline(
 	}
 	st := started.StartReplayTask
 	if st.Error != nil {
-		return nil, fmt.Errorf("start pipeline session %s: %s", sessionID, st.Error)
+		return nil, fmt.Errorf("start pipeline session %s: %w", sessionID, st.Error)
 	}
 	if st.Task == nil || st.Task.ReplayEntry.ID == "" {
 		return nil, fmt.Errorf("start pipeline session %s returned no entry", sessionID)

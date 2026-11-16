@@ -30,3 +30,13 @@ func prop(s *jsonschema.Schema, name string) *jsonschema.Schema {
 }
 
 func intPtr(i int) *int { return &i }
+
+// anyStrings widens a string slice for jsonschema.Schema.Enum, which takes
+// []any.
+func anyStrings(v []string) []any {
+	out := make([]any, len(v))
+	for i, s := range v {
+		out[i] = s
+	}
+	return out
+}

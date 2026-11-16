@@ -3,7 +3,9 @@ package tools
 import (
 	"context"
 	"fmt"
+	"time"
 
+	"github.com/c0tton-fluff/caido-mcp-server/v4/internal/replay"
 	caido "github.com/caido-community/sdk-go"
 	gen "github.com/caido-community/sdk-go/graphql"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -25,7 +27,9 @@ type WsStreamSummary struct {
 	IsTLS     bool   `json:"isTls"`
 	Direction string `json:"direction"`
 	Source    string `json:"source"`
-	CreatedAt int64  `json:"createdAt"`
+	// ReplaySessionID is the WS replay session that opened a REPLAY stream.
+	ReplaySessionID string `json:"replaySessionId,omitempty"`
+	CreatedAt       int64  `json:"createdAt"`
 }
 
 // ListWsStreamsOutput is the output of the list_ws_streams tool
@@ -84,11 +88,37 @@ func listWsStreamsHandler(
 				CreatedAt: n.CreatedAt,
 			})
 		}
+		linkReplaySessions(ctx, client, output.Streams)
 		output.HasMore, output.NextCursor = pageCursor(
 			conn.PageInfo.HasNextPage, conn.PageInfo.EndCursor,
 		)
 
 		return nil, output, nil
+	}
+}
+
+// linkReplaySessionsTimeout bounds the lookup: it walks every WS session's
+// entries, which grows with the project.
+const linkReplaySessionsTimeout = 5 * time.Second
+
+// linkReplaySessions fills ReplaySessionID on REPLAY streams. It is best
+// effort: a failed or slow lookup leaves the fields it did not reach empty
+// rather than failing the listing.
+func linkReplaySessions(ctx context.Context, client *caido.Client, streams []WsStreamSummary) {
+	var ids []string
+	for _, s := range streams {
+		if s.Source == string(gen.SourceReplay) {
+			ids = append(ids, s.ID)
+		}
+	}
+	if len(ids) == 0 {
+		return
+	}
+	ctx, cancel := context.WithTimeout(ctx, linkReplaySessionsTimeout)
+	defer cancel()
+	owners, _ := replay.WSStreamSessions(ctx, client, ids)
+	for i := range streams {
+		streams[i].ReplaySessionID = owners[streams[i].ID]
 	}
 }
 
@@ -98,7 +128,7 @@ func RegisterListWsStreamsTool(server *mcp.Server, client *caido.Client) {
 		Name:  "caido_list_ws_streams",
 		Title: "List WebSocket Streams",
 		Description: `List WebSocket streams (connections) from the WebSocket tab. ` +
-			`Returns id/host/port/path/direction/source. ` +
+			`Returns id/host/port/path/direction/source, plus replaySessionId for streams opened from a WS replay session. ` +
 			`Use the stream id with caido_list_ws_messages to read frames. ` +
 			`Params: limit (default 20, max 100), after (cursor), scope_id (optional).`,
 		Annotations: readOnlyAnn(),

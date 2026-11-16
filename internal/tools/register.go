@@ -118,6 +118,12 @@ var allTools = []registerFunc{
 	RegisterListWsStreamsTool,
 	RegisterListWsMessagesTool,
 
+	// WebSocket Replay (connect, send, read, close)
+	RegisterWsConnectTool,
+	RegisterWsSendTool,
+	RegisterWsReadTool,
+	RegisterWsCloseTool,
+
 	// Utilities
 	RegisterConvertBodyTool,
 

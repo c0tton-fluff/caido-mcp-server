@@ -11,6 +11,7 @@ type MockHandler struct {
 	mu            sync.Mutex
 	responses     map[string][]json.RawMessage
 	lastVariables map[string]map[string]any
+	hang          map[string]bool
 	validate      bool
 }
 
@@ -18,7 +19,16 @@ func NewMockHandler() *MockHandler {
 	return &MockHandler{
 		responses:     make(map[string][]json.RawMessage),
 		lastVariables: make(map[string]map[string]any),
+		hang:          make(map[string]bool),
 	}
+}
+
+// Hang makes every call of operationName block until the client gives up
+// (its context ends), simulating a Caido mutation that is never answered.
+func (m *MockHandler) Hang(operationName string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.hang[operationName] = true
 }
 
 // ValidateAgainstSchema makes the mock check every incoming query and its
@@ -75,6 +85,14 @@ func (m *MockHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	m.mu.Lock()
 	m.lastVariables[req.OperationName] = req.Variables
+	hang := m.hang[req.OperationName]
+	m.mu.Unlock()
+	if hang {
+		<-r.Context().Done()
+		return
+	}
+
+	m.mu.Lock()
 	queue, ok := m.responses[req.OperationName]
 	var resp json.RawMessage
 	if ok && len(queue) > 0 {

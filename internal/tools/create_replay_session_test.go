@@ -1,6 +1,7 @@
 package tools_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/c0tton-fluff/caido-mcp-server/v4/internal/testutil"
@@ -172,5 +173,52 @@ func assertKind(t *testing.T, input map[string]any, want string) {
 	t.Helper()
 	if got := input["kind"]; got != want {
 		t.Fatalf("variables.input.kind = %#v, want %q", got, want)
+	}
+}
+
+// The reported bug: a refused create (live 0.59.1: the plan allows one WS
+// session) read "create replay session returned no session" because
+// sdk-go dropped the error union. The refusal and its reason must surface.
+func TestCreateReplaySession_ReportsRefusal(t *testing.T) {
+	env := testutil.NewMCPTestEnv(t, func(s *mcp.Server, c *caido.Client) {
+		tools.RegisterCreateReplaySessionTool(s, c)
+	})
+	env.Mock.ValidateAgainstSchema()
+	env.Mock.On("CreateReplaySession", map[string]any{"createReplaySession": map[string]any{
+		"session": nil,
+		"error": map[string]any{
+			"__typename": "PermissionDeniedUserError", "code": "PERMISSION_DENIED",
+			"permissionReason": "ENTITLEMENT",
+		},
+	}})
+
+	result := env.CallTool(t, "caido_create_replay_session", map[string]any{"kind": "WS"})
+	tc, _ := result.Content[0].(*mcp.TextContent)
+	if !result.IsError || tc == nil ||
+		!strings.Contains(tc.Text, "PermissionDeniedUserError: PERMISSION_DENIED (ENTITLEMENT)") ||
+		!strings.Contains(tc.Text, "limit on WebSocket sessions") {
+		t.Fatalf("want the refusal and the WS hint, got %+v", result.Content)
+	}
+}
+
+// A failed rename deletes the new session, so no unnamed session is left
+// behind with an ID the caller never learns.
+func TestCreateReplaySession_RenameFailureDeletesSession(t *testing.T) {
+	env := testutil.NewMCPTestEnv(t, func(s *mcp.Server, c *caido.Client) {
+		tools.RegisterCreateReplaySessionTool(s, c)
+	})
+	env.Mock.On("CreateReplaySession", testutil.CreateReplaySessionResponse("sess-orphan"))
+	// No RenameReplaySession mock: the rename fails.
+	env.Mock.On("DeleteReplaySessions", map[string]any{
+		"deleteReplaySessions": map[string]any{"deletedIds": []string{"sess-orphan"}},
+	})
+
+	result := env.CallTool(t, "caido_create_replay_session", map[string]any{"name": "x"})
+	if !result.IsError {
+		t.Fatalf("want an error when the rename fails, got %+v", result.Content)
+	}
+	ids, _ := env.Mock.LastVariables("DeleteReplaySessions")["ids"].([]any)
+	if len(ids) != 1 || ids[0] != "sess-orphan" {
+		t.Fatalf("want the new session deleted, got %v", ids)
 	}
 }

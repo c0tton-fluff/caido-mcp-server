@@ -1,14 +1,13 @@
 package tools
 
 import (
+	"cmp"
 	"context"
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/c0tton-fluff/caido-mcp-server/v4/internal/replay"
 	caido "github.com/caido-community/sdk-go"
-	gen "github.com/caido-community/sdk-go/graphql"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -32,56 +31,26 @@ func createReplaySessionHandler(
 		req *mcp.CallToolRequest,
 		input CreateReplaySessionInput,
 	) (*mcp.CallToolResult, CreateReplaySessionOutput, error) {
-		// CreateReplaySessionInput.kind is a required GraphQL field per Caido 0.57 schema.
-		// Force HTTP default explicitly so we don't depend on sdk-go's empty-string default,
-		// which can disappear across SDK pins or when backend tightens validation.
-		kind := gen.ReplaySessionKindHttp
-		switch strings.ToUpper(strings.TrimSpace(input.Kind)) {
-		case "", "HTTP":
-			// keep default HTTP
-		case "WS":
-			kind = gen.ReplaySessionKindWs
-		default:
+		// kind is required by the CreateReplaySessionInput schema; default HTTP.
+		kind := cmp.Or(strings.ToUpper(strings.TrimSpace(input.Kind)), "HTTP")
+		if kind != "HTTP" && kind != "WS" {
 			return nil, CreateReplaySessionOutput{}, fmt.Errorf(
 				"invalid kind %q (allowed: HTTP, WS)", input.Kind,
 			)
 		}
-		createInput := &gen.CreateReplaySessionInput{Kind: kind}
-
+		createInput := map[string]any{"kind": kind}
 		if input.CollectionID != "" {
-			createInput.CollectionId = &input.CollectionID
+			createInput["collectionId"] = input.CollectionID
 		}
 		if input.RequestSourceID != "" {
-			createInput.RequestSource = &gen.RequestSourceInput{
-				Id: &input.RequestSourceID,
-			}
+			createInput["requestSource"] = map[string]any{"id": input.RequestSourceID}
 		}
 
-		sessionID, _, err := client.Replay.CreateSession(ctx, createInput)
+		sessionID, err := replay.CreateNamedSession(ctx, client, createInput, input.Name)
 		if err != nil {
 			return nil, CreateReplaySessionOutput{}, fmt.Errorf("create session: %w", err)
 		}
-
-		output := CreateReplaySessionOutput{ID: sessionID}
-
-		if input.Name != "" {
-			if _, _, err := replay.RenameSession(
-				ctx, client, sessionID, input.Name,
-			); err != nil {
-				// Do not leave an unnamed session behind: nothing returns its ID.
-				if _, delErr := client.Replay.DeleteSessions(
-					ctx, []string{sessionID},
-				); delErr != nil {
-					fmt.Fprintf(os.Stderr,
-						"replay: failed to delete orphaned session %s: %v\n",
-						sessionID, delErr)
-				}
-				return nil, CreateReplaySessionOutput{}, fmt.Errorf("rename session %s: %w", sessionID, err)
-			}
-			output.Name = input.Name
-		}
-
-		return nil, output, nil
+		return nil, CreateReplaySessionOutput{ID: sessionID, Name: input.Name}, nil
 	}
 }
 

@@ -76,6 +76,8 @@ var toolGroups = []toolGroup{
 			RegisterWsSendTool,
 			RegisterWsReadTool,
 			RegisterWsCloseTool,
+			RegisterSetWsMessageDraftTool,
+			RegisterClearWsMessageDraftTool,
 		},
 	},
 	{

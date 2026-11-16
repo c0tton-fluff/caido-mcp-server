@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- **WebSocket replay entries can be read and drafted.** Caido's replay API has a whole WebSocket half that had no MCP surface: an entry carries the upgrade handshake plus a `ReplayEntryWs` with a pending draft and the frames recorded on it. `caido_get_replay_entry` now reads WS entries (`sessionKind` `auto`/`HTTP`/`WS`; auto retries as WS when the HTTP query answers null) and returns the kind, the handshake request/response, the draft (body, `bodyEncoding`, `bodySize`, direction, format), `messages` (`messageLimit`, default 20) and `messageCount`. Two new tools drive the write side: `caido_set_ws_message_draft` writes an entry's draft (text or base64 payload, `TEXT`/`BINARY`/`PING`/`PONG`/`CLOSE`, `SERVER`/`CLIENT`, `serverTimeoutMs`), reusing the existing editor state because Caido rejects a draft write without it, and `caido_clear_ws_message_draft` removes it. Binary frame bodies come back as base64 instead of lossy U+FFFD text. Sending frames stays with `caido_ws_send`; this adds the staged draft the replay tab sends.
+
 ## [4.6.0] - 2026-11-24
 
 Four contributions from David Carliez that make captured traffic easier for an agent to read: binary bodies that survive the round trip, regex snippets that find a value without loading the body, a sitemap that can be walked in one call, and WebSocket listings that fill the page. Plus a dependency fix for a WebSocket advisory. Works with Caido 0.57+. Checked against a live Caido 0.59.0 server. 76 MCP tools, 6 resources.

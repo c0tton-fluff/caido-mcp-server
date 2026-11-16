@@ -13,6 +13,7 @@ import (
 
 	"github.com/c0tton-fluff/caido-mcp-server/v4/internal/httputil"
 	"github.com/c0tton-fluff/caido-mcp-server/v4/internal/raceattack"
+	"github.com/c0tton-fluff/caido-mcp-server/v4/internal/replay"
 	caido "github.com/caido-community/sdk-go"
 	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -59,6 +60,11 @@ func raceWindowSendHandler(
 	) (*mcp.CallToolResult, RaceWindowSendOutput, error) {
 		target, reqs, err := buildRaceSend(input)
 		if err != nil {
+			return nil, RaceWindowSendOutput{}, err
+		}
+		// This tool opens its own sockets and never goes through Caido's
+		// replay, so it has to ask the target guard itself.
+		if err := replay.CheckTarget(ctx, client, target.Host); err != nil {
 			return nil, RaceWindowSendOutput{}, err
 		}
 		results := raceattack.Send(ctx, target, reqs, input.BodyLimit)

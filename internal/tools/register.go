@@ -7,7 +7,10 @@ package tools
 import (
 	"context"
 	"fmt"
+	"maps"
+	"slices"
 
+	"github.com/c0tton-fluff/caido-mcp-server/v4/internal/replay"
 	caido "github.com/caido-community/sdk-go"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -144,6 +147,9 @@ type Options struct {
 	// sends traffic or changes the Caido project is registered, so a client
 	// cannot call it even by name.
 	ReadOnly bool
+	// EnforceScope refuses sends to hosts outside the project scope and
+	// withholds the tools that could change the scope (see scope_enforce.go).
+	EnforceScope bool
 }
 
 // RegisterAll registers every tool on the server and returns the number
@@ -167,15 +173,30 @@ func RegisterAllWith(
 	for _, register := range allTools {
 		register(server, client)
 	}
-	if !opts.ReadOnly {
+	withheld := map[string]bool{}
+	// The guard is process-wide, so set it either way: the last server
+	// configured decides, and "off" really is off.
+	replay.SetTargetGuard(nil)
+	if opts.EnforceScope {
+		replay.SetTargetGuard(enforceScope)
+		for _, name := range scopeLockedTools {
+			withheld[name] = true
+		}
+	}
+	if opts.ReadOnly {
+		mutating, err := mutatingToolNames(ctx, client)
+		if err != nil {
+			return 0, fmt.Errorf("read-only mode: %w", err)
+		}
+		for _, name := range mutating {
+			withheld[name] = true
+		}
+	}
+	if len(withheld) == 0 {
 		return len(allTools), nil
 	}
-	mutating, err := mutatingToolNames(ctx, client)
-	if err != nil {
-		return 0, fmt.Errorf("read-only mode: %w", err)
-	}
-	server.RemoveTools(mutating...)
-	return len(allTools) - len(mutating), nil
+	server.RemoveTools(slices.Collect(maps.Keys(withheld))...)
+	return len(allTools) - len(withheld), nil
 }
 
 // mutatingToolNames returns the names of the tools not annotated

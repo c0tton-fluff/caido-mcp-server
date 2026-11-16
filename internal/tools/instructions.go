@@ -28,3 +28,9 @@ Workflow
 
 Credentials
 - Values of Authorization, Cookie, Set-Cookie and similar headers, and of SECRET environment variables, come back as [REDACTED]. Redacted means present, not missing.`
+
+// InstructionsScopeEnforced is appended to the instructions when scope is
+// enforced (Options.EnforceScope).
+const InstructionsScopeEnforced = `
+
+Scope is enforced: a request, batch, race or WebSocket connection to a host outside the project scope is refused, and the tools that create, change or delete scopes or switch projects are not available. Check a host with caido_is_in_scope; if a target you need is out of scope, ask the operator to add it in Caido.`

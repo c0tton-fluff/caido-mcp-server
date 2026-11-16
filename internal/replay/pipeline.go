@@ -153,6 +153,13 @@ func RunPipeline(
 	if err != nil {
 		return nil, err
 	}
+	// A pipeline is one run: refuse it whole if any request targets a host
+	// the guard does not allow, before a session is created.
+	for i, r := range reqs {
+		if err := CheckTarget(ctx, client, r.Conn.Host); err != nil {
+			return nil, fmt.Errorf("request %d: %w", i, err)
+		}
+	}
 	sources := make([]map[string]any, len(reqs))
 	for i, r := range reqs {
 		sources[i] = rawRequestSource(r.Raw, r.Conn)

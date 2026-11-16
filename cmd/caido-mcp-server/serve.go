@@ -30,10 +30,14 @@ It requires authentication via 'caido-mcp-server login' first.`,
 // newServer builds the MCP server without tools or resources. It is the
 // single construction site, so tests exercise the same options serve runs
 // with. Protocol versions are left at the SDK default (latest supported).
-func newServer(readOnly bool) *mcp.Server {
+func newServer(readOnly, enforceScope bool) *mcp.Server {
 	instructions := tools.Instructions
 	if readOnly {
 		instructions = tools.InstructionsReadOnly
+	} else if enforceScope {
+		// Read-only mode has no tool that sends, so the note only matters
+		// when sending is possible.
+		instructions += tools.InstructionsScopeEnforced
 	}
 	return mcp.NewServer(
 		&mcp.Implementation{
@@ -48,25 +52,28 @@ func init() {
 	serveCmd.Flags().Bool("read-only", false,
 		"Expose only tools that read state: nothing that sends traffic or "+
 			"changes the Caido project (or set CAIDO_MCP_READ_ONLY=1)")
+	serveCmd.Flags().Bool("enforce-scope", false,
+		"Refuse requests to hosts outside the project scope and withhold the "+
+			"tools that change scopes or switch projects (or set CAIDO_MCP_ENFORCE_SCOPE=1)")
 	rootCmd.AddCommand(serveCmd)
 }
 
-// readOnlyMode reports whether serve should run read-only: the --read-only
-// flag, or CAIDO_MCP_READ_ONLY set to a true value (MCP client configs set
+// restriction reports whether a safety restriction is on: its flag, or its
+// environment variable set to a true value (MCP client configs set
 // environment variables more readily than arguments). A value that does not
 // parse as a boolean is an error rather than a silent "off", because the
-// operator asked for a restriction and must not get the full tool set.
-func readOnlyMode(cmd *cobra.Command) (bool, error) {
-	if on, _ := cmd.Flags().GetBool("read-only"); on {
+// operator asked for a restriction and must not get the unrestricted server.
+func restriction(cmd *cobra.Command, flag, env string) (bool, error) {
+	if on, _ := cmd.Flags().GetBool(flag); on {
 		return true, nil
 	}
-	v := os.Getenv("CAIDO_MCP_READ_ONLY")
+	v := os.Getenv(env)
 	if v == "" {
 		return false, nil
 	}
 	on, err := strconv.ParseBool(v)
 	if err != nil {
-		return false, fmt.Errorf("CAIDO_MCP_READ_ONLY=%q is not a boolean (use 1 or 0)", v)
+		return false, fmt.Errorf("%s=%q is not a boolean (use 1 or 0)", env, v)
 	}
 	return on, nil
 }
@@ -76,7 +83,11 @@ func runServe(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	readOnly, err := readOnlyMode(cmd)
+	readOnly, err := restriction(cmd, "read-only", "CAIDO_MCP_READ_ONLY")
+	if err != nil {
+		return err
+	}
+	enforceScope, err := restriction(cmd, "enforce-scope", "CAIDO_MCP_ENFORCE_SCOPE")
 	if err != nil {
 		return err
 	}
@@ -123,10 +134,10 @@ func runServe(cmd *cobra.Command, args []string) error {
 		)
 	}
 
-	server := newServer(readOnly)
+	server := newServer(readOnly, enforceScope)
 
 	toolCount, err := tools.RegisterAllWith(
-		ctx, server, client, tools.Options{ReadOnly: readOnly},
+		ctx, server, client, tools.Options{ReadOnly: readOnly, EnforceScope: enforceScope},
 	)
 	if err != nil {
 		return err
@@ -135,7 +146,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 	// Resources (read-only data for agent context)
 	resourceCount := resources.RegisterAll(server, client)
 
-	logStartup(caidoURL, authMode, toolCount, resourceCount, readOnly)
+	logStartup(caidoURL, authMode, toolCount, resourceCount, readOnly, enforceScope)
 
 	if err := server.Run(ctx, &mcp.StdioTransport{}); err != nil {
 		return fmt.Errorf("server error: %w", err)
@@ -162,7 +173,9 @@ func staticToken() (token, source string) {
 // logStartup prints a startup banner to stderr. It must never write to
 // stdout: stdout is the MCP JSON-RPC channel and any extra bytes there
 // would corrupt the protocol stream.
-func logStartup(caidoURL, authMode string, toolCount, resourceCount int, readOnly bool) {
+func logStartup(
+	caidoURL, authMode string, toolCount, resourceCount int, readOnly, enforceScope bool,
+) {
 	fmt.Fprintf(os.Stderr, "caido-mcp-server %s\n", buildinfo.Version())
 	fmt.Fprintf(os.Stderr, "  Caido URL:  %s\n", caidoURL)
 	fmt.Fprintf(os.Stderr, "  Auth:       %s\n", authMode)
@@ -171,6 +184,10 @@ func logStartup(caidoURL, authMode string, toolCount, resourceCount int, readOnl
 	if readOnly {
 		fmt.Fprintln(os.Stderr,
 			"  Mode:       read-only (tools that send traffic or change the project are not registered)")
+	}
+	if enforceScope {
+		fmt.Fprintln(os.Stderr,
+			"  Scope:      enforced (out-of-scope targets refused; scope and project tools withheld)")
 	}
 	fmt.Fprintln(os.Stderr,
 		"  Transport:  stdio (ready, waiting for MCP client)")

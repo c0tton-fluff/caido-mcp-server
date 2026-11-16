@@ -178,6 +178,12 @@ func sendRequestHandler(
 			)
 		}
 
+		// Before any session is created: a refused target leaves no trace.
+		// The replay package checks again at the point of sending.
+		if err := replay.CheckTarget(ctx, client, host); err != nil {
+			return nil, SendRequestOutput{}, err
+		}
+
 		// A new session starts with an empty cookie jar, so there is
 		// nothing to resolve or inject until the send assigns its ID.
 		var sessionID string

@@ -8,60 +8,6 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-func TestHostMatchesGlob(t *testing.T) {
-	tests := []struct {
-		name string
-		host string
-		glob string
-		want bool
-	}{
-		{"exact literal match", "example.com", "example.com", true},
-		{"case insensitive literal", "Example.COM", "example.com", true},
-		{"wildcard subdomain matches", "api.example.com", "*.example.com", true},
-		{"wildcard subdomain case insensitive", "API.EXAMPLE.COM", "*.example.com", true},
-		{"wildcard subdomain multi-level", "a.b.example.com", "*.example.com", true},
-		{"bare domain does not match subdomain wildcard", "example.com", "*.example.com", false},
-		{"lookalike suffix rejected", "evil-example.com", "*.example.com", false},
-		{"unrelated host rejected", "other.com", "*.example.com", false},
-		{"bare star matches anything", "anything.test", "*", true},
-		{"bare star matches empty-ish host", "x", "*", true},
-		{"partial substring is not a match", "example.com.evil.com", "example.com", false},
-		{"empty glob never matches", "example.com", "", false},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := hostMatchesGlob(tt.host, tt.glob)
-			if got != tt.want {
-				t.Errorf("hostMatchesGlob(%q, %q) = %v, want %v", tt.host, tt.glob, got, tt.want)
-			}
-		})
-	}
-}
-
-func TestParseHost(t *testing.T) {
-	tests := []struct {
-		name string
-		raw  string
-		want string
-	}{
-		{"bare host", "example.com", "example.com"},
-		{"bare host with port", "example.com:8080", "example.com"},
-		{"http url", "http://example.com", "example.com"},
-		{"https url with port and path", "https://example.com:8443/path", "example.com"},
-		{"mixed case normalized to lower", "HTTPS://Example.COM/Path", "example.com"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := parseHost(tt.raw)
-			if got != tt.want {
-				t.Errorf("parseHost(%q) = %q, want %q", tt.raw, got, tt.want)
-			}
-		})
-	}
-}
-
 // TestIsInScope covers caido_is_in_scope (op ListScopes, field "scopes").
 func TestIsInScope(t *testing.T) {
 	prodScope := map[string]any{

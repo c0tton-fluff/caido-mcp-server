@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- **`caido_get_sitemap` reports request counts, depth and a limit.** Root domains now carry `capturedRequests`, the exact number of captured requests for that host (on the 20,001-request corpus: api 7,875, shop 9,227, static 1,483, auth 413, admin 776, graphql 227). The tree cannot supply that number: one request appears under its directory, its path and its query, so summing entry counts overcounts, and a host entry's own `requests` connection covered only 6,718 of 7,875. `depth` adds `all` for the whole subtree, `limit` truncates locally with `totalEntries`/`truncated` because Caido accepts no cursor on these connections, and `includeRequestCounts` adds each entry's own count. That last option is off by default: it costs one nested count per entry.
+
 ## [4.5.0] - 2026-11-16
 
 Safety modes for handing the server to an agent, WebSocket replay, and a tool list that can shrink to a quarter of its size. Scope enforcement, read-only mode and secret redaction decide what an agent is able to do instead of trusting it to behave. Works with Caido 0.57+; the WebSocket replay tools need 0.59. Verified against a live Caido 0.59.1 server. 76 MCP tools, 6 resources.

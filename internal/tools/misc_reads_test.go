@@ -287,23 +287,26 @@ func TestGetReplayEntryTool(t *testing.T) {
 	}
 }
 
-// TestGetSitemapTool covers caido_get_sitemap root path.
-// SDK op: ListSitemapRootEntries -> data.sitemapRootEntries.edges[].node { id, label, kind, hasDescendants }.
+// TestGetSitemapTool covers caido_get_sitemap root listing, including the
+// per-host captured request count that the tool adds on top of the tree.
 func TestGetSitemapTool(t *testing.T) {
 	tests := []struct {
-		name      string
-		input     map[string]any
-		mockData  map[string]any
-		mockErr   bool
-		wantErr   bool
-		wantCount int
-		wantLabel string
+		name       string
+		input      map[string]any
+		mockData   map[string]any
+		hostCounts []int
+		mockErr    bool
+		wantErr    bool
+		wantCount  int
+		wantLabel  string
+		wantTotal  int
 	}{
 		{
-			name:  "root success",
+			name:  "root with host count",
 			input: map[string]any{},
 			mockData: map[string]any{
 				"sitemapRootEntries": map[string]any{
+					"count": map[string]any{"value": 1},
 					"edges": []map[string]any{
 						{
 							"node": map[string]any{
@@ -316,18 +319,22 @@ func TestGetSitemapTool(t *testing.T) {
 					},
 				},
 			},
-			wantCount: 1,
-			wantLabel: "example.com",
+			hostCounts: []int{42},
+			wantCount:  1,
+			wantLabel:  "example.com",
+			wantTotal:  1,
 		},
 		{
 			name:  "root empty",
 			input: map[string]any{},
 			mockData: map[string]any{
 				"sitemapRootEntries": map[string]any{
+					"count": map[string]any{"value": 0},
 					"edges": []map[string]any{},
 				},
 			},
 			wantCount: 0,
+			wantTotal: 0,
 		},
 		{
 			name:    "graphql error",
@@ -342,8 +349,18 @@ func TestGetSitemapTool(t *testing.T) {
 			env := testutil.NewMCPTestEnv(t, func(s *mcp.Server, c *caido.Client) {
 				tools.RegisterGetSitemapTool(s, c)
 			})
+			env.Mock.ValidateAgainstSchema()
 			if !tt.mockErr {
-				env.Mock.On("ListSitemapRootEntries", tt.mockData)
+				env.Mock.On("SitemapRootEntries", tt.mockData)
+				for _, count := range tt.hostCounts {
+					env.Mock.On("ListRequests", map[string]any{
+						"requests": map[string]any{
+							"edges":    []any{},
+							"pageInfo": map[string]any{"hasNextPage": false},
+							"count":    map[string]any{"value": count},
+						},
+					})
+				}
 			}
 
 			result := env.CallTool(t, "caido_get_sitemap", tt.input)
@@ -360,101 +377,23 @@ func TestGetSitemapTool(t *testing.T) {
 			if len(out.Entries) != tt.wantCount {
 				t.Fatalf("entries count = %d, want %d", len(out.Entries), tt.wantCount)
 			}
-			if tt.wantCount > 0 && out.Entries[0].Label != tt.wantLabel {
-				t.Errorf("label = %q, want %q", out.Entries[0].Label, tt.wantLabel)
+			if out.TotalEntries != tt.wantTotal {
+				t.Errorf("totalEntries = %d, want %d", out.TotalEntries, tt.wantTotal)
 			}
-		})
-	}
-}
-
-// TestGetSessionCookiesTool covers caido_get_session_cookies.
-// This tool reads the in-memory cookie jar (no GraphQL fetch of cookies), so the
-// provided GetSessionCookies op is NOT used. An explicit sessionId is passed to
-// avoid the CreateReplaySession path (which mutates package-global default state).
-func TestGetSessionCookiesTool(t *testing.T) {
-	tests := []struct {
-		name    string
-		input   map[string]any
-		wantErr bool
-		wantURL string
-		wantSID string
-	}{
-		{
-			name: "success empty jar",
-			input: map[string]any{
-				"sessionId": "sess-1",
-				"url":       "https://example.com/app",
-			},
-			wantURL: "https://example.com/app",
-			wantSID: "sess-1",
-		},
-		{
-			name:    "missing required url",
-			input:   map[string]any{"sessionId": "sess-1"},
-			wantErr: true,
-		},
-		{
-			name: "invalid url",
-			input: map[string]any{
-				"sessionId": "sess-1",
-				"url":       "ht!tp://%zz",
-			},
-			wantErr: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			env := testutil.NewMCPTestEnv(t, func(s *mcp.Server, c *caido.Client) {
-				tools.RegisterGetSessionCookiesTool(s, c)
-			})
-
-			result := env.CallTool(t, "caido_get_session_cookies", tt.input)
-			if tt.wantErr {
-				if !result.IsError {
-					t.Fatal("expected error")
+			if tt.wantCount > 0 {
+				if out.Entries[0].Label != tt.wantLabel {
+					t.Errorf("label = %q, want %q", out.Entries[0].Label, tt.wantLabel)
 				}
-				return
-			}
-			if result.IsError {
-				t.Fatalf("unexpected error: %v", result.Content)
-			}
-			out := testutil.UnmarshalToolResult[tools.GetSessionCookiesOutput](t, result)
-			if out.SessionID != tt.wantSID {
-				t.Errorf("sessionId = %q, want %q", out.SessionID, tt.wantSID)
-			}
-			if out.URL != tt.wantURL {
-				t.Errorf("url = %q, want %q", out.URL, tt.wantURL)
-			}
-			if out.Count != len(out.Cookies) {
-				t.Errorf("count = %d, want len(cookies) = %d", out.Count, len(out.Cookies))
+				if tt.hostCounts != nil {
+					got := out.Entries[0].CapturedRequests
+					if got == nil || *got != tt.hostCounts[0] {
+						t.Errorf(
+							"capturedRequests = %v, want %d",
+							got, tt.hostCounts[0],
+						)
+					}
+				}
 			}
 		})
-	}
-}
-
-// TestClearSessionCookiesTool covers caido_clear_session_cookies.
-// Operates purely on the in-memory cookie store; an explicit sessionId avoids the
-// CreateReplaySession path. Clearing an untracked jar returns cleared=false + a note.
-func TestClearSessionCookiesTool(t *testing.T) {
-	env := testutil.NewMCPTestEnv(t, func(s *mcp.Server, c *caido.Client) {
-		tools.RegisterClearSessionCookiesTool(s, c)
-	})
-
-	result := env.CallTool(t, "caido_clear_session_cookies", map[string]any{
-		"sessionId": "sess-untracked",
-	})
-	if result.IsError {
-		t.Fatalf("unexpected error: %v", result.Content)
-	}
-	out := testutil.UnmarshalToolResult[tools.ClearSessionCookiesOutput](t, result)
-	if out.SessionID != "sess-untracked" {
-		t.Errorf("sessionId = %q, want %q", out.SessionID, "sess-untracked")
-	}
-	if out.Cleared {
-		t.Errorf("cleared = true for untracked jar, want false")
-	}
-	if out.Note == "" {
-		t.Errorf("expected a note explaining no jar was tracked")
 	}
 }

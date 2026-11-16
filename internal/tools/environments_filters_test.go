@@ -491,3 +491,60 @@ func TestDeleteFilter(t *testing.T) {
 		})
 	}
 }
+
+// TestListEnvironmentsRedactsSecrets: a SECRET variable's value must not
+// reach the model unless the operator opted out of redaction. The toggle is
+// pinned in both directions so an ambient CAIDO_ALLOW_SENSITIVE_HEADERS
+// cannot decide the result.
+func TestListEnvironmentsRedactsSecrets(t *testing.T) {
+	tests := []struct {
+		name       string
+		allow      string
+		wantSecret string
+	}{
+		{"default redacts", "", "[REDACTED]"},
+		{"unparseable value still redacts", "yes please", "[REDACTED]"},
+		{"explicit false redacts", "false", "[REDACTED]"},
+		{"opt-out shows the value", "true", "s3cr3t-value"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("CAIDO_ALLOW_SENSITIVE_HEADERS", tt.allow)
+			env := testutil.NewMCPTestEnv(t, func(s *mcp.Server, c *caido.Client) {
+				tools.RegisterListEnvironmentsTool(s, c)
+			})
+			env.Mock.On("ListEnvironments", map[string]any{
+				"environments": []map[string]any{{
+					"id": "2", "name": "staging", "version": 1,
+					"variables": []map[string]any{
+						{"name": "token", "value": "s3cr3t-value", "kind": "SECRET"},
+						{"name": "host", "value": "example.com", "kind": "PLAIN"},
+					},
+				}},
+			})
+			env.Mock.On("GetEnvironmentContext", map[string]any{
+				"environmentContext": map[string]any{"global": nil, "selected": nil},
+			})
+
+			result := env.CallTool(t, "caido_list_environments", map[string]any{})
+			if result.IsError {
+				t.Fatalf("unexpected error: %v", result.Content)
+			}
+			out := testutil.UnmarshalToolResult[tools.ListEnvironmentsOutput](t, result)
+			vars := out.Environments[0].Variables
+			if len(vars) != 2 {
+				t.Fatalf("got %d variables, want 2 (a redacted variable is still listed)", len(vars))
+			}
+			if vars[0].Name != "token" || vars[0].Kind != "SECRET" || vars[0].Value != tt.wantSecret {
+				t.Errorf("secret variable = %+v, want value %q", vars[0], tt.wantSecret)
+			}
+			if vars[1].Value != "example.com" {
+				t.Errorf("PLAIN variable value = %q, want it shown", vars[1].Value)
+			}
+			leaked := strings.Contains(contentText(result), "s3cr3t-value")
+			if leaked != (tt.wantSecret == "s3cr3t-value") {
+				t.Errorf("secret present in raw output = %v", leaked)
+			}
+		})
+	}
+}

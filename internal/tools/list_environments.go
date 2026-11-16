@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 
+	"github.com/c0tton-fluff/caido-mcp-server/v4/internal/httputil"
 	caido "github.com/caido-community/sdk-go"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -77,7 +78,7 @@ func listEnvironmentsHandler(
 					summary.Variables,
 					EnvironmentVariable{
 						Name:  v.Name,
-						Value: v.Value,
+						Value: environmentValue(string(v.Kind), v.Value),
 						Kind:  string(v.Kind),
 					},
 				)
@@ -91,6 +92,17 @@ func listEnvironmentsHandler(
 	}
 }
 
+// environmentValue is the value shown for a variable of the given kind.
+// SECRET values are withheld unless the operator opted out of redaction:
+// Caido marks them secret so they stay out of view, and a listing is not a
+// reason to put them in the model's context. PLAIN values are shown.
+func environmentValue(kind, value string) string {
+	if kind == "SECRET" && !httputil.SensitiveValuesAllowed() {
+		return httputil.Redacted
+	}
+	return value
+}
+
 // RegisterListEnvironmentsTool registers the tool
 func RegisterListEnvironmentsTool(
 	server *mcp.Server, client *caido.Client,
@@ -98,7 +110,7 @@ func RegisterListEnvironmentsTool(
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "caido_list_environments",
 		Title:       "List Environments",
-		Description: `List environments and their variables (tokens, keys, etc). Shows which is currently selected.`,
+		Description: `List environments and their variables, and which environment is selected. Values of SECRET variables come back as [REDACTED] (the variable exists; reference it from Replay placeholders instead of copying it). PLAIN values are shown.`,
 		Annotations: readOnlyAnn(),
 	}, listEnvironmentsHandler(client))
 }

@@ -53,6 +53,8 @@ Both share the same auth token, the same Go SDK, and the same codebase.
 **Built-in security and performance:**
 
 - Credential redaction - Authorization, Cookie, and API key headers are redacted in tool output by default (including raw request/response dumps and the `caido://requests/{id}` resource); opt out with `CAIDO_ALLOW_SENSITIVE_HEADERS` (see [Revealing sensitive headers](#revealing-sensitive-headers))
+- Secret environment variables - values of `SECRET` variables are redacted in `caido_list_environments`; the same opt-out applies
+- Read-only mode - `serve --read-only` registers only the tools that read state, so nothing that sends traffic or changes the project can be called (see [Read-only mode](#read-only-mode))
 - Tool annotations - every tool declares `readOnlyHint`/`destructiveHint`/`idempotentHint`/`openWorldHint` so MCP clients can distinguish read-only, destructive, and external-network tools
 - Session cookie jar - RFC 6265 jar per replay session; `Set-Cookie` from a response is auto-attached to the next `send_request` against the same session
 - Response fingerprinting - auto-detects content kind (json/html/xml/text/binary) so agents know what they're dealing with
@@ -99,7 +101,27 @@ By default, sensitive headers (`Authorization`, `Cookie`, `Set-Cookie`, `Proxy-A
 }
 ```
 
-When enabled, real credential values flow through tool output to the model; leave it unset to keep redaction. This toggle does not affect the session cookie jar, which only ever reports cookie names and metadata, never values.
+When enabled, real credential values flow through tool output to the model; leave it unset to keep redaction. The same toggle reveals the values of `SECRET` environment variables in `caido_list_environments`. It does not affect the session cookie jar, which only ever reports cookie names and metadata, never values.
+
+### Read-only mode
+
+Start the server with `--read-only` (or set `CAIDO_MCP_READ_ONLY=1`) to expose only the tools annotated read-only. Tools that send traffic or change the Caido project are not registered at all, so a client cannot call them even by name. Use it to let an agent review captured traffic without the ability to touch a target or the project.
+
+```json
+{
+  "mcpServers": {
+    "caido-readonly": {
+      "command": "caido-mcp-server",
+      "args": ["serve", "--read-only"],
+      "env": {
+        "CAIDO_URL": "http://127.0.0.1:8080"
+      }
+    }
+  }
+}
+```
+
+The startup banner reports the mode and the reduced tool count. A `CAIDO_MCP_READ_ONLY` value that is not a boolean stops the server instead of starting it with every tool.
 
 ---
 

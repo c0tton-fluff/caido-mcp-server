@@ -37,6 +37,15 @@ func allowSensitiveHeaders() bool {
 	return allow
 }
 
+// Redacted is what a withheld credential value is replaced with.
+const Redacted = "[REDACTED]"
+
+// SensitiveValuesAllowed reports whether the operator opted out of
+// credential redaction (CAIDO_ALLOW_SENSITIVE_HEADERS). It is the one switch
+// for every place a stored credential could reach the model: sensitive
+// headers here, SECRET environment variables in the tools package.
+func SensitiveValuesAllowed() bool { return allowSensitiveHeaders() }
+
 type Header struct {
 	Name  string `json:"name"`
 	Value string `json:"value"`

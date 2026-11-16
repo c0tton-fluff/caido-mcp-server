@@ -26,6 +26,19 @@ It requires authentication via 'caido-mcp-server login' first.`,
 	RunE: runServe,
 }
 
+// newServer builds the MCP server without tools or resources. It is the
+// single construction site, so tests exercise the same options serve runs
+// with. Protocol versions are left at the SDK default (latest supported).
+func newServer() *mcp.Server {
+	return mcp.NewServer(
+		&mcp.Implementation{
+			Name:    "caido-mcp-server",
+			Version: buildinfo.Version(),
+		},
+		&mcp.ServerOptions{Instructions: tools.Instructions},
+	)
+}
+
 func init() {
 	rootCmd.AddCommand(serveCmd)
 }
@@ -78,13 +91,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 		)
 	}
 
-	server := mcp.NewServer(
-		&mcp.Implementation{
-			Name:    "caido-mcp-server",
-			Version: buildinfo.Version(),
-		},
-		nil,
-	)
+	server := newServer()
 
 	toolCount := tools.RegisterAll(server, client)
 

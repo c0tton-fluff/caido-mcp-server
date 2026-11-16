@@ -61,6 +61,7 @@ var allTools = []registerFunc{
 	RegisterIsInScopeTool,
 	RegisterCreateScopeTool,
 	RegisterRenameScopeTool,
+	RegisterUpdateScopeTool,
 	RegisterDeleteScopeTool,
 
 	// Projects
@@ -78,6 +79,7 @@ var allTools = []registerFunc{
 	// Environments
 	RegisterListEnvironmentsTool,
 	RegisterSelectEnvironmentTool,
+	RegisterUpdateEnvironmentTool,
 	RegisterCreateEnvironmentTool,
 	RegisterDeleteEnvironmentTool,
 

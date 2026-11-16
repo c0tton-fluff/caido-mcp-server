@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- **Server instructions.** The server now sends MCP `instructions` in the initialize result: how the tools chain (find, send, record), and the credential contract that spans them (`[REDACTED]` header values are present, not missing, and must never be sent back literally; `caido_edit_request` and the per-session cookie jar are how an agent acts as a captured user). A test checks every tool they name against the registered set and caps their size.
+- **`caido_update_scope`** - change an existing scope's name, allowlist or denylist. `addAllow` / `addDeny` append host patterns without restating the lists; omitted fields keep their stored value. Until now a scope could be created, renamed and deleted but its lists could not be changed.
+- **`caido_update_environment`** - set, overwrite or delete environment variables by name, or rename the environment. Variables not mentioned are kept with their stored value and kind, and the write carries the version that was read, so a concurrent change is reported instead of overwritten. The output lists variable names and kinds, not values. Until now an environment could be created but never given a variable.
+- **`caido_list_requests` accepts `scopeId`** to list and count only the requests inside one scope.
+
+### Fixed
+- **An unknown scope ID is refused instead of silently ignored.** Caido answers a listing filtered by a scope that does not exist with the unscoped listing (seen live on 0.59.1), so a stale ID made out-of-scope traffic look in scope. `caido_list_requests` (`scopeId`) and `caido_list_ws_streams` (`scope_id`) now check the scope exists first.
+
+### Changed
+- `caido_batch_send`: the request cap and the concurrency default and cap are named constants with one owner each; behaviour is unchanged.
+
 ## [4.5.0] - 2026-11-14
 
 WebSocket replay: open, drive and read a WebSocket through Caido from an MCP session, and the fix for WS replay sessions that could not be created. Needs Caido 0.59+ for the new tools; verified against a live 0.59.1 server.

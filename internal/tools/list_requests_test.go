@@ -401,3 +401,59 @@ func errText(result *mcp.CallToolResult) string {
 	}
 	return b.String()
 }
+
+// TestListRequestsScope checks scopeId reaches Caido as the scopeId variable,
+// that a call without it sends none (the unscoped listing is unchanged), and
+// that an unknown scope is refused: Caido would ignore it and return the
+// unscoped listing.
+func TestListRequestsScope(t *testing.T) {
+	scopes := map[string]any{"scopes": []map[string]any{{
+		"id": "7", "name": "prod", "allowlist": []string{"a.example"},
+		"denylist": []string{}, "indexed": true,
+	}}}
+	tests := []struct {
+		name    string
+		args    map[string]any
+		want    any
+		wantErr string
+	}{
+		{name: "scoped", args: map[string]any{"scopeId": "7"}, want: "7"},
+		{name: "unscoped", args: map[string]any{}, want: nil},
+		{name: "unknown scope refused", args: map[string]any{"scopeId": "8"}, wantErr: "scope 8 not found"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			env := testutil.NewMCPTestEnv(t, func(server *mcp.Server, client *caido.Client) {
+				tools.RegisterListRequestsTool(server, client)
+			})
+			env.Mock.ValidateAgainstSchema()
+			env.Mock.On("ListScopes", scopes)
+			env.Mock.On("ListRequests", testutil.ListRequestsResponse("req1"))
+
+			result := env.CallTool(t, "caido_list_requests", tt.args)
+			vars := env.Mock.LastVariables("ListRequests")
+			if tt.wantErr != "" {
+				if !result.IsError || !strings.Contains(contentText(result), tt.wantErr) {
+					t.Fatalf("want error containing %q, got %v", tt.wantErr, result.Content)
+				}
+				if vars != nil {
+					t.Fatal("ListRequests must not run for an unknown scope")
+				}
+				return
+			}
+			if result.IsError {
+				t.Fatalf("unexpected error: %v", result.Content)
+			}
+			if vars == nil {
+				t.Fatal("ListRequests was not called")
+			}
+			if got := vars["scopeId"]; got != tt.want {
+				t.Fatalf("scopeId variable = %#v, want %#v", got, tt.want)
+			}
+			// No scope given means no extra round trip to look one up.
+			if tt.want == nil && env.Mock.LastVariables("ListScopes") != nil {
+				t.Fatal("ListScopes must not be called without scopeId")
+			}
+		})
+	}
+}

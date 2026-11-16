@@ -19,6 +19,7 @@ type ListRequestsInput struct {
 	After   string `json:"after,omitempty" jsonschema:"Cursor for pagination from previous response nextCursor"`
 	OrderBy string `json:"orderBy,omitempty" jsonschema:"Field to sort by (default id). Omit to leave the server's default order untouched"`
 	Order   string `json:"order,omitempty" jsonschema:"Sort direction: asc or desc. Set order without orderBy to sort by id, i.e. desc gives the newest requests first"`
+	ScopeID string `json:"scopeId,omitempty" jsonschema:"Only requests inside this scope (ID from caido_list_scopes). Combines with httpql; totalCount then counts in-scope matches"`
 }
 
 // ListRequestsOutput is the output of the list_requests tool
@@ -143,6 +144,12 @@ func listRequestsHandler(
 		if input.HTTPQL != "" {
 			opts.Filter = &input.HTTPQL
 		}
+		if input.ScopeID != "" {
+			if err := requireScope(ctx, client, input.ScopeID); err != nil {
+				return nil, ListRequestsOutput{}, err
+			}
+			opts.ScopeID = &input.ScopeID
+		}
 		if input.After != "" {
 			opts.After = &input.After
 		}
@@ -191,7 +198,7 @@ func RegisterListRequestsTool(
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "caido_list_requests",
 		Title:       "List Requests",
-		Description: `List HTTP requests. Filter with httpql (e.g. req.host.eq:"example.com"). On Caido 0.58+ match headers and bodies directly instead of scanning raw: req.header["Authorization"].cont:"Bearer", resp.body.cont:"stack trace". Returns id/method/url/status, and totalCount = how many requests match httpql. Newest first in one call: limit:5 with order:"desc" (sorts by id); orderBy picks the field (createdAt, statusCode, roundtripTime, responseLength, host, path, ...). Counting matches is limit:1 plus totalCount; no paging needed. Paginate with after from nextCursor, which keeps the same order.`,
+		Description: `List HTTP requests. Filter with httpql (e.g. req.host.eq:"example.com"). On Caido 0.58+ match headers and bodies directly instead of scanning raw: req.header["Authorization"].cont:"Bearer", resp.body.cont:"stack trace". Returns id/method/url/status, and totalCount = how many requests match httpql. Newest first in one call: limit:5 with order:"desc" (sorts by id); orderBy picks the field (createdAt, statusCode, roundtripTime, responseLength, host, path, ...). Counting matches is limit:1 plus totalCount; no paging needed. scopeId restricts the listing and the count to one scope (caido_list_scopes). Paginate with after from nextCursor, which keeps the same order.`,
 		InputSchema: schemaFor[ListRequestsInput](func(s *jsonschema.Schema) {
 			if p := prop(s, "httpql"); p != nil {
 				p.MaxLength = intPtr(10000)

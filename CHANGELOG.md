@@ -9,11 +9,13 @@ All notable changes to this project will be documented in this file.
 - **`caido_update_scope`** - change an existing scope's name, allowlist or denylist. `addAllow` / `addDeny` append host patterns without restating the lists; omitted fields keep their stored value. Until now a scope could be created, renamed and deleted but its lists could not be changed.
 - **`caido_update_environment`** - set, overwrite or delete environment variables by name, or rename the environment. Variables not mentioned are kept with their stored value and kind, and the write carries the version that was read, so a concurrent change is reported instead of overwritten. The output lists variable names and kinds, not values. Until now an environment could be created but never given a variable.
 - **`caido_list_requests` accepts `scopeId`** to list and count only the requests inside one scope.
+- **Read-only mode.** `serve --read-only` (or `CAIDO_MCP_READ_ONLY=1`) registers only the tools annotated read-only. Tools that send traffic or change the Caido project are removed from the server, not just hidden, and the server instructions switch to a read-only version that names no withheld tool. A `CAIDO_MCP_READ_ONLY` value that is not a boolean stops the server rather than starting it with every tool.
 
 ### Fixed
 - **An unknown scope ID is refused instead of silently ignored.** Caido answers a listing filtered by a scope that does not exist with the unscoped listing (seen live on 0.59.1), so a stale ID made out-of-scope traffic look in scope. `caido_list_requests` (`scopeId`) and `caido_list_ws_streams` (`scope_id`) now check the scope exists first.
 
 ### Changed
+- **`caido_list_environments` redacts `SECRET` variable values** as `[REDACTED]` by default; `PLAIN` values are still shown. Set `CAIDO_ALLOW_SENSITIVE_HEADERS` to reveal them, the same opt-out as for sensitive headers. An agent that needs a secret in a request should reference the variable from a Replay placeholder instead of copying its value.
 - `caido_batch_send`: the request cap and the concurrency default and cap are named constants with one owner each; behaviour is unchanged.
 
 ## [4.5.0] - 2026-11-14

@@ -5,6 +5,9 @@
 package tools
 
 import (
+	"context"
+	"fmt"
+
 	caido "github.com/caido-community/sdk-go"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -135,9 +138,28 @@ var allTools = []registerFunc{
 	RegisterPassthroughTool,
 }
 
+// Options selects which tools RegisterAllWith exposes.
+type Options struct {
+	// ReadOnly exposes only the tools annotated read-only: nothing that
+	// sends traffic or changes the Caido project is registered, so a client
+	// cannot call it even by name.
+	ReadOnly bool
+}
+
 // RegisterAll registers every tool on the server and returns the number
 // of tools registered.
 func RegisterAll(server *mcp.Server, client *caido.Client) int {
+	n, _ := RegisterAllWith(context.Background(), server, client, Options{})
+	return n
+}
+
+// RegisterAllWith registers the tools opts selects and returns how many
+// are exposed. It only fails in read-only mode, when the registered tools
+// cannot be listed to tell which ones to withhold; the server must not
+// start in that case, since it would expose the mutating tools.
+func RegisterAllWith(
+	ctx context.Context, server *mcp.Server, client *caido.Client, opts Options,
+) (int, error) {
 	// Normalize the input schemas advertised to clients (see
 	// normalizeToolSchemas): params must not be ["null", <type>] unions, which
 	// several MCP clients mis-serialize.
@@ -145,5 +167,54 @@ func RegisterAll(server *mcp.Server, client *caido.Client) int {
 	for _, register := range allTools {
 		register(server, client)
 	}
-	return len(allTools)
+	if !opts.ReadOnly {
+		return len(allTools), nil
+	}
+	mutating, err := mutatingToolNames(ctx, client)
+	if err != nil {
+		return 0, fmt.Errorf("read-only mode: %w", err)
+	}
+	server.RemoveTools(mutating...)
+	return len(allTools) - len(mutating), nil
+}
+
+// mutatingToolNames returns the names of the tools not annotated
+// read-only. The annotation lives in each tool's registration, so the names
+// are read back from a scratch server over an in-memory session rather than
+// kept in a second list that could drift.
+func mutatingToolNames(ctx context.Context, client *caido.Client) ([]string, error) {
+	scratch := mcp.NewServer(&mcp.Implementation{Name: "tool-probe", Version: "0"}, nil)
+	for _, register := range allTools {
+		register(scratch, client)
+	}
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	serverT, clientT := mcp.NewInMemoryTransports()
+	if _, err := scratch.Connect(ctx, serverT, nil); err != nil {
+		return nil, fmt.Errorf("probe tools: %w", err)
+	}
+	session, err := mcp.NewClient(
+		&mcp.Implementation{Name: "tool-probe", Version: "0"}, nil,
+	).Connect(ctx, clientT, nil)
+	if err != nil {
+		return nil, fmt.Errorf("probe tools: %w", err)
+	}
+	defer func() { _ = session.Close() }()
+
+	var names []string
+	seen := 0
+	for tool, err := range session.Tools(ctx, nil) {
+		if err != nil {
+			return nil, fmt.Errorf("probe tools: %w", err)
+		}
+		seen++
+		if tool.Annotations == nil || !tool.Annotations.ReadOnlyHint {
+			names = append(names, tool.Name)
+		}
+	}
+	// A short listing would leave mutating tools registered and unnoticed.
+	if seen != len(allTools) {
+		return nil, fmt.Errorf("probe tools: listed %d of %d tools", seen, len(allTools))
+	}
+	return names, nil
 }

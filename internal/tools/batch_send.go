@@ -12,6 +12,10 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
+// maxBatchRequests caps one caido_batch_send call. The struct tag and the
+// tool description repeat the number as text, so change all three together.
+const maxBatchRequests = 50
+
 // BatchSendInput is the input for the batch_send tool.
 type BatchSendInput struct {
 	Requests    []BatchRequestItem `json:"requests" jsonschema:"required,Array of requests to send in parallel (max 50)"`
@@ -66,9 +70,9 @@ func batchSendHandler(
 				"requests array is required and must not be empty",
 			)
 		}
-		if n > 50 {
+		if n > maxBatchRequests {
 			return nil, BatchSendOutput{}, fmt.Errorf(
-				"max 50 requests per batch, got %d", n,
+				"max %d requests per batch, got %d", maxBatchRequests, n,
 			)
 		}
 
@@ -100,10 +104,6 @@ func batchSendHandler(
 			}
 		}
 
-		concurrency := input.Concurrency
-		if concurrency == 0 {
-			concurrency = 5
-		}
 		bodyLimit := input.BodyLimit
 		if bodyLimit == 0 {
 			bodyLimit = 2000
@@ -114,7 +114,7 @@ func batchSendHandler(
 		}
 
 		rawResults := replay.RunBatch(
-			ctx, client, batchReqs, concurrency, bodyLimit,
+			ctx, client, batchReqs, input.Concurrency, bodyLimit,
 		)
 
 		// Enrich each result's fingerprint with response-only details
@@ -188,7 +188,7 @@ func RegisterBatchSendTool(
 		Description: `Send multiple HTTP requests in parallel (max 50). Use for BAC token sweeps, parameter fuzzing, or endpoint sweeps. Returns statusCode, headers, and a response fingerprint per request; body text omitted by default (includeBody:true to include). marker flags reflection per result. Set sessionId per request to auto-inject and persist session cookies. See README "Response fingerprinting" for field details.`,
 		InputSchema: schemaFor[BatchSendInput](func(s *jsonschema.Schema) {
 			if p := prop(s, "requests"); p != nil {
-				p.MaxItems = intPtr(50)
+				p.MaxItems = intPtr(maxBatchRequests)
 			}
 		}),
 		Annotations: writeAnn(false, false, true),

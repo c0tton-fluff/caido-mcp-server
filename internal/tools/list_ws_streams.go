@@ -56,6 +56,9 @@ func listWsStreamsHandler(
 			opts.After = &input.After
 		}
 		if input.ScopeID != "" {
+			if err := requireScope(ctx, client, input.ScopeID); err != nil {
+				return nil, ListWsStreamsOutput{}, err
+			}
 			opts.ScopeID = &input.ScopeID
 		}
 

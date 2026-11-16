@@ -22,7 +22,7 @@
 
 Two ways to interact with your Caido proxy:
 
-- **MCP Server** - expose 74 tools and 6 read-only resources to AI assistants (Claude Code, Cursor, etc.) via the Model Context Protocol
+- **MCP Server** - expose 76 tools and 6 read-only resources to AI assistants (Claude Code, Cursor, etc.) via the Model Context Protocol
 - **CLI** - standalone terminal client for pentesters who prefer the command line
 
 Both share the same auth token, the same Go SDK, and the same codebase.
@@ -201,11 +201,11 @@ you use it, so upgrading does not require a fresh login.
 "What's in scope?"
 ```
 
-### MCP Tools (74)
+### MCP Tools (76)
 
 | Tool | Description |
 |------|-------------|
-| `caido_list_requests` | List requests with HTTPQL filter, ordering and pagination; returns the filter's total count |
+| `caido_list_requests` | List requests with HTTPQL filter, scope, ordering and pagination; returns the filter's total count |
 | `caido_get_request` | Get request details (metadata, headers, body). 2KB body limit default |
 | `caido_diff_responses` | Structural diff of two responses by Caido request ID: status/size change flags and a compact body/header summary (never dumps full bodies) |
 | `caido_send_request` | Send HTTP request via Replay, returns response inline. Polls up to 10s. Auto-injects session cookies and persists `Set-Cookie` (toggle with `useCookieJar`) |
@@ -237,6 +237,7 @@ you use it, so upgrading does not require a fresh login.
 | `caido_is_in_scope` | Check whether a host or URL is in the project scope; returns the matching scope and the allow/deny rule that decided it |
 | `caido_create_scope` | Create new scope with allow/deny lists |
 | `caido_rename_scope` | Rename a scope |
+| `caido_update_scope` | Change a scope's name, allowlist or denylist; `addAllow` / `addDeny` append without restating the lists |
 | `caido_delete_scope` | Delete a scope |
 | `caido_list_projects` | List projects, marks current |
 | `caido_select_project` | Switch active project |
@@ -260,6 +261,7 @@ you use it, so upgrading does not require a fresh login.
 | `caido_drop_intercept` | Drop intercepted request |
 | `caido_list_environments` | List environments and their variables |
 | `caido_select_environment` | Switch active environment |
+| `caido_update_environment` | Set, overwrite or delete environment variables by name, or rename the environment. Returns names and kinds, never values |
 | `caido_create_environment` | Create a new environment |
 | `caido_delete_environment` | Delete an environment |
 | `caido_list_filters` | List saved HTTPQL filter presets |
@@ -305,6 +307,7 @@ Read-only data exposed via the MCP resources protocol. Agents can read these wit
 | `after` | string | Pagination cursor |
 | `orderBy` | string | Sort field: `id`, `createdAt`, `host`, `method`, `path`, `query`, `fileExtension`, `source`, `statusCode`, `roundtripTime`, `responseLength`. Omit for Caido's default order |
 | `order` | string | `asc` or `desc` (default `desc` when `orderBy` is set; `desc` without `orderBy` sorts by id, i.e. newest first) |
+| `scopeId` | string | Only requests inside this scope (ID from `caido_list_scopes`); `totalCount` then counts in-scope matches |
 
 `totalCount` in the response is every request matching `httpql`, not just the rows on the page, so `{"httpql": "...", "limit": 1}` counts matches in one call. The newest N is `{"limit": N, "order": "desc"}`. `nextCursor` keeps the requested order, so `after` pages contiguously.
 

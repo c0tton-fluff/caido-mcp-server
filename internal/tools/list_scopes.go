@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"fmt"
 
 	caido "github.com/caido-community/sdk-go"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -54,6 +55,23 @@ func listScopesHandler(
 
 		return nil, output, nil
 	}
+}
+
+// requireScope fails when no scope has the given ID. Caido ignores an
+// unknown scopeId and answers with the unscoped listing (seen live on
+// 0.59.1: same totalCount as no scope at all), which would let an agent
+// holding a stale ID treat out-of-scope traffic as in scope.
+func requireScope(ctx context.Context, client *caido.Client, id string) error {
+	resp, err := client.Scopes.List(ctx)
+	if err != nil {
+		return fmt.Errorf("check scope %s: %w", id, err)
+	}
+	for _, s := range resp.Scopes {
+		if s.Id == id {
+			return nil
+		}
+	}
+	return fmt.Errorf("scope %s not found; list scopes with caido_list_scopes", id)
 }
 
 // RegisterListScopesTool registers the tool with the MCP server

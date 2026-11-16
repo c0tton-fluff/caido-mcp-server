@@ -13,6 +13,13 @@ import (
 	caido "github.com/caido-community/sdk-go"
 )
 
+// Batch concurrency bounds: how many replay sessions RunBatch drives at
+// once when the caller gives none, and the most it will ever use.
+const (
+	defaultBatchConcurrency = 5
+	maxBatchConcurrency     = 20
+)
+
 // BatchRequest is a single request in a batch.
 type BatchRequest struct {
 	Label     string
@@ -44,11 +51,9 @@ func RunBatch(
 	bodyLimit int,
 ) []BatchResult {
 	if concurrency < 1 {
-		concurrency = 5
+		concurrency = defaultBatchConcurrency
 	}
-	if concurrency > 20 {
-		concurrency = 20
-	}
+	concurrency = min(concurrency, maxBatchConcurrency)
 	if bodyLimit <= 0 {
 		bodyLimit = httputil.DefaultBodyLimit
 	}

@@ -16,7 +16,7 @@ import (
 func TestProtocolVersionNegotiation(t *testing.T) {
 	ctx := context.Background()
 
-	server := newServer(false, false)
+	server := newServer(tools.Options{})
 
 	clientTransport, serverTransport := mcp.NewInMemoryTransports()
 

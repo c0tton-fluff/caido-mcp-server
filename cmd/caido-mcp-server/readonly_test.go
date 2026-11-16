@@ -6,20 +6,21 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// TestRestriction covers how serve decides a safety restriction is on, for
-// both restrictions. An unparseable environment value must be an error: the
+// TestBoolOption covers how serve decides a boolean option is on, for each
+// option. An unparseable environment value must be an error: the
 // operator asked for a restriction, and falling back to the unrestricted
 // server would be the unsafe reading of a typo.
-func TestRestriction(t *testing.T) {
+func TestBoolOption(t *testing.T) {
 	for _, r := range []struct{ flag, env string }{
 		{"read-only", "CAIDO_MCP_READ_ONLY"},
 		{"enforce-scope", "CAIDO_MCP_ENFORCE_SCOPE"},
+		{"compact", "CAIDO_MCP_COMPACT"},
 	} {
-		t.Run(r.flag, func(t *testing.T) { testRestriction(t, r.flag, r.env) })
+		t.Run(r.flag, func(t *testing.T) { testBoolOption(t, r.flag, r.env) })
 	}
 }
 
-func testRestriction(t *testing.T, flag, env string) {
+func testBoolOption(t *testing.T, flag, env string) {
 	tests := []struct {
 		name    string
 		flag    bool
@@ -46,12 +47,12 @@ func testRestriction(t *testing.T, flag, env string) {
 					t.Fatal(err)
 				}
 			}
-			got, err := restriction(cmd, flag, env)
+			got, err := boolOption(cmd, flag, env)
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("err = %v, wantErr %v", err, tt.wantErr)
 			}
 			if got != tt.want {
-				t.Fatalf("restriction = %v, want %v", got, tt.want)
+				t.Fatalf("boolOption = %v, want %v", got, tt.want)
 			}
 		})
 	}

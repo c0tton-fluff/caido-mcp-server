@@ -9,6 +9,8 @@ All notable changes to this project will be documented in this file.
 
 ### Security
 - **`gorilla/websocket` bumped past GO-2026-6278.** v1.5.3 generated WebSocket mask keys with a weak random source; the login flow dials Caido over a WebSocket through this library. Pinned to the upstream commit that carries the fix (`v1.5.4-0.20240701034025-d67f41855da4`), since no tagged release includes it yet.
+### Added
+- **`caido_get_sitemap` reports request counts, depth and a limit.** Root domains now carry `capturedRequests`, the exact number of captured requests for that host (on the 20,001-request corpus: api 7,875, shop 9,227, static 1,483, auth 413, admin 776, graphql 227). The tree cannot supply that number: one request appears under its directory, its path and its query, so summing entry counts overcounts, and a host entry's own `requests` connection covered only 6,718 of 7,875. `depth` adds `all` for the whole subtree, `limit` truncates locally with `totalEntries`/`truncated` because Caido accepts no cursor on these connections, and `includeRequestCounts` adds each entry's own count. That last option is off by default: it costs one nested count per entry.
 
 ## [4.5.0] - 2026-11-16
 

@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+- **`caido_list_ws_streams` dropped WebSocket streams on mixed pages.** Caido 0.57 removed the `protocol` query argument, so the tool filtered a single page client-side: a page of 20 mostly-HTTP streams that held one WebSocket returned one row and `hasMore:false`, hiding the rest. It now pages until the requested count is met (bounded to 20 upstream pages), keeps `nextCursor` on the last consumed edge so a truncated page resumes exactly there, and reports `hasMore` when the budget runs out.
+
 ## [4.5.0] - 2026-11-16
 
 Safety modes for handing the server to an agent, WebSocket replay, and a tool list that can shrink to a quarter of its size. Scope enforcement, read-only mode and secret redaction decide what an agent is able to do instead of trusting it to behave. Works with Caido 0.57+; the WebSocket replay tools need 0.59. Verified against a live Caido 0.59.1 server. 76 MCP tools, 6 resources.

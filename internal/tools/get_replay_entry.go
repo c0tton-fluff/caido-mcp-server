@@ -8,6 +8,7 @@ import (
 	"github.com/c0tton-fluff/caido-mcp-server/v4/internal/httputil"
 	"github.com/c0tton-fluff/caido-mcp-server/v4/internal/replay"
 	caido "github.com/caido-community/sdk-go"
+	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -16,6 +17,9 @@ type GetReplayEntryInput struct {
 	ID         string `json:"id" jsonschema:"required,Replay entry ID"`
 	BodyOffset int    `json:"bodyOffset,omitempty" jsonschema:"Body byte offset"`
 	BodyLimit  int    `json:"bodyLimit,omitempty" jsonschema:"Body byte limit (default 2000)"`
+	// BodyEncoding forces how the response body is rendered. Empty means
+	// auto: UTF-8 bodies stay text, binary bodies become base64.
+	BodyEncoding string `json:"bodyEncoding,omitempty" jsonschema:"Body text or base64: auto (default; text for UTF-8 bodies, base64 for binary), text, base64"`
 }
 
 // GetReplayEntryOutput is the output of the get_replay_entry tool
@@ -62,6 +66,10 @@ func getReplayEntryHandler(
 		if bodyLimit == 0 {
 			bodyLimit = httputil.DefaultBodyLimit
 		}
+		encoding, err := httputil.ParseEncoding(input.BodyEncoding)
+		if err != nil {
+			return nil, GetReplayEntryOutput{}, err
+		}
 
 		output := GetReplayEntryOutput{ID: entry.ID}
 
@@ -82,9 +90,9 @@ func getReplayEntryHandler(
 			r := entry.Request.Response
 			output.StatusCode = r.StatusCode
 			output.RoundtripMs = r.RoundtripTime
-			output.Response = httputil.ParseBase64(
+			output.Response = httputil.ParseBase64With(
 				r.Raw, true, true,
-				input.BodyOffset, bodyLimit,
+				input.BodyOffset, bodyLimit, encoding,
 			)
 		}
 
@@ -99,7 +107,12 @@ func RegisterGetReplayEntryTool(
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "caido_get_replay_entry",
 		Title:       "Get Replay Entry",
-		Description: `Get replay entry with full request and response content. Use after send_request timeout to retrieve results.`,
+		Description: `Get replay entry with full request and response content. Use after send_request timeout to retrieve results. The response body is text when UTF-8 and base64 (with bodyEncoding:"base64", bodySize, bodyOffset) when binary; bodyOffset/bodyLimit count bytes and bodyEncoding can force text or base64.`,
+		InputSchema: schemaFor[GetReplayEntryInput](func(s *jsonschema.Schema) {
+			if p := prop(s, "bodyEncoding"); p != nil {
+				p.Enum = []any{"auto", "text", "base64"}
+			}
+		}),
 		Annotations: readOnlyAnn(),
 	}, getReplayEntryHandler(client))
 }

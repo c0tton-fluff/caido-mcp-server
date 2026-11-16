@@ -8,6 +8,7 @@ import (
 
 	"github.com/c0tton-fluff/caido-mcp-server/v4/internal/httputil"
 	caido "github.com/caido-community/sdk-go"
+	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -17,6 +18,9 @@ type GetRequestInput struct {
 	Include    []string `json:"include,omitempty" jsonschema:"Fields to include (default: metadata only)"`
 	BodyOffset int      `json:"bodyOffset,omitempty" jsonschema:"Body byte offset"`
 	BodyLimit  int      `json:"bodyLimit,omitempty" jsonschema:"Body byte limit (default 2000)"`
+	// BodyEncoding forces how bodies are rendered. Empty means auto: UTF-8
+	// bodies stay text (the previous output), binary bodies become base64.
+	BodyEncoding string `json:"bodyEncoding,omitempty" jsonschema:"Body text or base64: auto (default; text for UTF-8 bodies, base64 for binary), text, base64"`
 }
 
 // GetRequestOutput is the output for a single request
@@ -80,6 +84,10 @@ func getRequestHandler(
 		if bodyLimit == 0 {
 			bodyLimit = httputil.DefaultBodyLimit
 		}
+		encoding, err := httputil.ParseEncoding(input.BodyEncoding)
+		if err != nil {
+			return nil, nil, err
+		}
 
 		var results []GetRequestOutput
 		for _, id := range input.IDs {
@@ -87,7 +95,7 @@ func getRequestHandler(
 			if includeRequiresRaw(include) {
 				output = processFullRequest(
 					ctx, client, id, include,
-					input.BodyOffset, bodyLimit,
+					input.BodyOffset, bodyLimit, encoding,
 				)
 			} else {
 				output = processMetadataRequest(
@@ -151,6 +159,7 @@ func processFullRequest(
 	id string,
 	include []string,
 	bodyOffset, bodyLimit int,
+	encoding httputil.Encoding,
 ) GetRequestOutput {
 	resp, err := client.Requests.Get(ctx, id)
 	if err != nil {
@@ -188,8 +197,8 @@ func processFullRequest(
 	inclReqH := shouldInclude(include, "requestHeaders")
 	inclReqB := shouldInclude(include, "requestBody")
 	if inclReqH || inclReqB {
-		output.Request = httputil.ParseBase64(
-			r.Raw, inclReqH, inclReqB, bodyOffset, bodyLimit,
+		output.Request = httputil.ParseBase64With(
+			r.Raw, inclReqH, inclReqB, bodyOffset, bodyLimit, encoding,
 		)
 	}
 
@@ -197,9 +206,9 @@ func processFullRequest(
 		inclRespH := shouldInclude(include, "responseHeaders")
 		inclRespB := shouldInclude(include, "responseBody")
 		if inclRespH || inclRespB {
-			output.Response = httputil.ParseBase64(
+			output.Response = httputil.ParseBase64With(
 				r.Response.Raw, inclRespH, inclRespB,
-				bodyOffset, bodyLimit,
+				bodyOffset, bodyLimit, encoding,
 			)
 		}
 	}
@@ -214,7 +223,12 @@ func RegisterGetRequestTool(
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "caido_get_request",
 		Title:       "Get Request",
-		Description: `Get request details. Default: metadata only (saves tokens). Use include=[requestHeaders,requestBody,responseHeaders,responseBody] for more. Body limit: 2KB default.`,
+		Description: `Get request details. Default: metadata only (saves tokens). Use include=[requestHeaders,requestBody,responseHeaders,responseBody] for more. Body limit: 2KB default; bodyOffset/bodyLimit count bytes. Bodies come back as text when they are UTF-8 and base64 with bodyEncoding:"base64" (plus bodySize, bodyOffset) when they are not, so binary responses survive the JSON round trip; set bodyEncoding to force text or base64.`,
+		InputSchema: schemaFor[GetRequestInput](func(s *jsonschema.Schema) {
+			if p := prop(s, "bodyEncoding"); p != nil {
+				p.Enum = []any{"auto", "text", "base64"}
+			}
+		}),
 		Annotations: readOnlyAnn(),
 	}, getRequestHandler(client))
 }

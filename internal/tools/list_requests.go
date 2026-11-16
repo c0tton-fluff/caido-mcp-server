@@ -3,7 +3,9 @@ package tools
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
+	"time"
 
 	"github.com/c0tton-fluff/caido-mcp-server/v4/internal/httputil"
 	caido "github.com/caido-community/sdk-go"
@@ -20,6 +22,11 @@ type ListRequestsInput struct {
 	OrderBy string `json:"orderBy,omitempty" jsonschema:"Field to sort by (default id). Omit to leave the server's default order untouched"`
 	Order   string `json:"order,omitempty" jsonschema:"Sort direction: asc or desc. Set order without orderBy to sort by id, i.e. desc gives the newest requests first"`
 	ScopeID string `json:"scopeId,omitempty" jsonschema:"Only requests inside this scope (ID from caido_list_scopes). Combines with httpql; totalCount then counts in-scope matches"`
+	// Snippet runs a RE2 regex over the returned rows and reports matches
+	// with context, without returning the bodies.
+	Snippet *ListRequestsSnippetInput `json:"snippet,omitempty" jsonschema:"Regex scan over the returned rows: {regex, context, maxPerRequest, parts}"`
+	// Fields adds per-row fields that the list query already returns.
+	Fields []string `json:"fields,omitempty" jsonschema:"Extra per-row fields: createdAt, host, path, query, source, responseLength, roundtripTime"`
 }
 
 // ListRequestsOutput is the output of the list_requests tool
@@ -109,10 +116,100 @@ func buildRequestOrder(
 
 // RequestSummary is a minimal representation of a request
 type RequestSummary struct {
-	ID         string `json:"id"`
-	Method     string `json:"method"`
-	URL        string `json:"url"`
-	StatusCode int    `json:"statusCode,omitempty"`
+	ID             string  `json:"id"`
+	Method         string  `json:"method"`
+	URL            string  `json:"url"`
+	StatusCode     int     `json:"statusCode,omitempty"`
+	CreatedAt      *string `json:"createdAt,omitempty"`
+	Host           *string `json:"host,omitempty"`
+	Path           *string `json:"path,omitempty"`
+	Query          *string `json:"query,omitempty"`
+	Source         *string `json:"source,omitempty"`
+	ResponseLength *int    `json:"responseLength,omitempty"`
+	RoundtripTime  *int    `json:"roundtripTime,omitempty"`
+	// Matches holds up to snippet.max regex hits for this row.
+	Matches []RequestMatch `json:"matches,omitempty"`
+	// MatchesTruncated reports that more matches exist than were returned.
+	MatchesTruncated bool `json:"matchesTruncated,omitempty"`
+	// ScanTruncated reports that a part exceeded the per-row scan cap.
+	ScanTruncated bool `json:"scanTruncated,omitempty"`
+	// SnippetError reports why this row could not be scanned.
+	SnippetError string `json:"snippetError,omitempty"`
+}
+
+// applyRequestFields copies the requested extra fields from a list row and
+// marks rows that did not come through the proxy.
+func applyRequestFields(
+	summary *RequestSummary,
+	r gen.ListRequestsRequestsRequestConnectionEdgesRequestEdgeNodeRequest,
+	fields map[string]bool,
+) {
+	if fields != nil {
+		if fields["createdAt"] {
+			created := time.UnixMilli(r.CreatedAt).Format(time.RFC3339)
+			summary.CreatedAt = &created
+		}
+		if fields["host"] {
+			summary.Host = &r.Host
+		}
+		if fields["path"] {
+			summary.Path = &r.Path
+		}
+		if fields["query"] {
+			summary.Query = &r.Query
+		}
+		if fields["source"] {
+			source := string(r.Source)
+			summary.Source = &source
+		}
+		if r.Response != nil {
+			if fields["responseLength"] {
+				length := r.Response.Length
+				summary.ResponseLength = &length
+			}
+			if fields["roundtripTime"] {
+				roundtrip := r.Response.RoundtripTime
+				summary.RoundtripTime = &roundtrip
+			}
+		}
+	}
+
+	// Replayed, automated or imported rows say so even when fields was not
+	// asked for: a row that is not captured proxy traffic is a different
+	// object to an agent looking for the captured request, and the row shape
+	// for captured traffic stays unchanged. An empty source is not a real
+	// enum value (it appears in fixtures), so it stays out.
+	if summary.Source == nil && r.Source != "" &&
+		r.Source != gen.SourceIntercept {
+		source := string(r.Source)
+		summary.Source = &source
+	}
+}
+
+// requestFieldNames is the accepted set for the fields option. Each name
+// maps to a value the list query already returns, so no extra request is
+// needed.
+var requestFieldNames = []string{
+	"createdAt", "host", "path", "query", "source", "responseLength",
+	"roundtripTime",
+}
+
+// parseRequestFields validates the fields option.
+func parseRequestFields(fields []string) (map[string]bool, error) {
+	if len(fields) == 0 {
+		return nil, nil
+	}
+	selected := make(map[string]bool, len(fields))
+	for _, f := range fields {
+		if !slices.Contains(requestFieldNames, f) {
+			return nil, fmt.Errorf(
+				"fields must be one of [%s], got %q",
+				strings.Join(requestFieldNames, " "), f,
+			)
+		}
+		selected[f] = true
+	}
+	return selected, nil
 }
 
 // listRequestsHandler creates the handler function for the list_requests tool
@@ -133,6 +230,15 @@ func listRequestsHandler(
 		limit := clampLimit(input.Limit, 20, 100)
 
 		order, err := buildRequestOrder(input.OrderBy, input.Order)
+		if err != nil {
+			return nil, ListRequestsOutput{}, err
+		}
+
+		fields, err := parseRequestFields(input.Fields)
+		if err != nil {
+			return nil, ListRequestsOutput{}, err
+		}
+		snippet, err := newSnippetSpec(input.Snippet)
 		if err != nil {
 			return nil, ListRequestsOutput{}, err
 		}
@@ -180,12 +286,17 @@ func listRequestsHandler(
 			if r.Response != nil {
 				summary.StatusCode = r.Response.StatusCode
 			}
+			applyRequestFields(&summary, r, fields)
 			output.Requests = append(output.Requests, summary)
 		}
 
 		output.HasMore, output.NextCursor = pageCursor(
 			conn.PageInfo.HasNextPage, conn.PageInfo.EndCursor,
 		)
+
+		if snippet != nil {
+			snippet.annotate(ctx, client, output.Requests)
+		}
 
 		return nil, output, nil
 	}
@@ -198,7 +309,7 @@ func RegisterListRequestsTool(
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "caido_list_requests",
 		Title:       "List Requests",
-		Description: `List HTTP requests. Filter with httpql (e.g. req.host.eq:"example.com"). On Caido 0.58+ match headers and bodies directly instead of scanning raw: req.header["Authorization"].cont:"Bearer", resp.body.cont:"stack trace". Returns id/method/url/status, and totalCount = how many requests match httpql. Newest first in one call: limit:5 with order:"desc" (sorts by id); orderBy picks the field (createdAt, statusCode, roundtripTime, responseLength, host, path, ...). Counting matches is limit:1 plus totalCount; no paging needed. scopeId restricts the listing and the count to one scope (caido_list_scopes). Paginate with after from nextCursor, which keeps the same order.`,
+		Description: `List HTTP requests. Filter with httpql (e.g. req.host.eq:"example.com"). On Caido 0.58+ match headers and bodies directly instead of scanning raw: req.header["Authorization"].cont:"Bearer", resp.body.cont:"stack trace". Returns id/method/url/status, and totalCount = how many requests match httpql. Newest first in one call: limit:5 with order:"desc" (sorts by id); orderBy picks the field (createdAt, statusCode, roundtripTime, responseLength, host, path, ...). Counting matches is limit:1 plus totalCount; no paging needed. scopeId restricts the listing and the count to one scope (caido_list_scopes). See a value without downloading bodies: snippet:{regex:"AKIA[0-9A-Z]{16}"} returns each hit with its part, byte offset and context instead of the bodies. fields adds createdAt/host/path/query/source/responseLength/roundtripTime to each row, and rows that did not come from the proxy carry a source (REPLAY, AUTOMATE, WORKFLOW, PLUGIN, IMPORT) without asking. Paginate with after from nextCursor, which keeps the same order.`,
 		InputSchema: schemaFor[ListRequestsInput](func(s *jsonschema.Schema) {
 			if p := prop(s, "httpql"); p != nil {
 				p.MaxLength = intPtr(10000)
@@ -208,6 +319,21 @@ func RegisterListRequestsTool(
 			}
 			if p := prop(s, "order"); p != nil {
 				p.Enum = []any{"asc", "desc"}
+			}
+			if p := prop(s, "fields"); p != nil {
+				if p.Items != nil {
+					p.Items.Enum = anyStrings(requestFieldNames)
+				}
+			}
+			if snippet := prop(s, "snippet"); snippet != nil {
+				if p := prop(snippet, "regex"); p != nil {
+					p.MaxLength = intPtr(1000)
+				}
+				if parts := prop(snippet, "parts"); parts != nil {
+					if parts.Items != nil {
+						parts.Items.Enum = anyStrings(snippetParts)
+					}
+				}
 			}
 		}),
 		Annotations: readOnlyAnn(),

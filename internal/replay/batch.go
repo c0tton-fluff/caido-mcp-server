@@ -136,6 +136,13 @@ func executeSingle(
 		}
 	}
 
+	// Checked per request, after the host is final: one refused target
+	// fails that item and the rest of the batch still runs.
+	if err := CheckTarget(ctx, client, host); err != nil {
+		result.Error = err.Error()
+		return result
+	}
+
 	useTLS := true
 	if br.TLS != nil {
 		useTLS = *br.TLS

@@ -6,11 +6,20 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// TestReadOnlyMode covers how serve decides to run read-only. An
-// unparseable CAIDO_MCP_READ_ONLY must be an error: the operator asked for
-// a restriction, and falling back to the full tool set would be the unsafe
-// reading of a typo.
-func TestReadOnlyMode(t *testing.T) {
+// TestRestriction covers how serve decides a safety restriction is on, for
+// both restrictions. An unparseable environment value must be an error: the
+// operator asked for a restriction, and falling back to the unrestricted
+// server would be the unsafe reading of a typo.
+func TestRestriction(t *testing.T) {
+	for _, r := range []struct{ flag, env string }{
+		{"read-only", "CAIDO_MCP_READ_ONLY"},
+		{"enforce-scope", "CAIDO_MCP_ENFORCE_SCOPE"},
+	} {
+		t.Run(r.flag, func(t *testing.T) { testRestriction(t, r.flag, r.env) })
+	}
+}
+
+func testRestriction(t *testing.T, flag, env string) {
 	tests := []struct {
 		name    string
 		flag    bool
@@ -29,20 +38,20 @@ func TestReadOnlyMode(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Setenv("CAIDO_MCP_READ_ONLY", tt.env)
+			t.Setenv(env, tt.env)
 			cmd := &cobra.Command{}
-			cmd.Flags().Bool("read-only", false, "")
+			cmd.Flags().Bool(flag, false, "")
 			if tt.flag {
-				if err := cmd.Flags().Set("read-only", "true"); err != nil {
+				if err := cmd.Flags().Set(flag, "true"); err != nil {
 					t.Fatal(err)
 				}
 			}
-			got, err := readOnlyMode(cmd)
+			got, err := restriction(cmd, flag, env)
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("err = %v, wantErr %v", err, tt.wantErr)
 			}
 			if got != tt.want {
-				t.Fatalf("readOnlyMode = %v, want %v", got, tt.want)
+				t.Fatalf("restriction = %v, want %v", got, tt.want)
 			}
 		})
 	}

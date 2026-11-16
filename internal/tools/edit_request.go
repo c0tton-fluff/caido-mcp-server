@@ -188,6 +188,12 @@ func editRequestHandler(
 			port = httputil.DefaultPort(useTLS)
 		}
 
+		// Before any session is created: a refused target leaves no trace.
+		// replay.Send checks again at the point of sending.
+		if err := replay.CheckTarget(ctx, client, host); err != nil {
+			return nil, SendRequestOutput{}, err
+		}
+
 		sessionID, err := replay.GetOrCreateSession(ctx, client, input.SessionID)
 		if err != nil {
 			return nil, SendRequestOutput{}, err

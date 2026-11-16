@@ -103,6 +103,9 @@ func Send(
 	conn caido.ReplayConnection,
 	cacheReplacement bool,
 ) (*SendResult, error) {
+	if err := CheckTarget(ctx, client, conn.Host); err != nil {
+		return nil, err
+	}
 	rawB64 := base64.StdEncoding.EncodeToString([]byte(rawRequest))
 
 	sess, prevEntryID, err := sendOnSession(ctx, client, sessionID, rawB64, conn)
@@ -180,6 +183,9 @@ func SendNew(
 	conn caido.ReplayConnection,
 	collectionID, name string,
 ) (*SendResult, error) {
+	if err := CheckTarget(ctx, client, conn.Host); err != nil {
+		return nil, err
+	}
 	rawB64 := base64.StdEncoding.EncodeToString([]byte(rawRequest))
 	newID, err := createSeeded(ctx, client, rawB64, conn, collectionID, name)
 	if err != nil {

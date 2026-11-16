@@ -55,6 +55,7 @@ Both share the same auth token, the same Go SDK, and the same codebase.
 - Credential redaction - Authorization, Cookie, and API key headers are redacted in tool output by default (including raw request/response dumps and the `caido://requests/{id}` resource); opt out with `CAIDO_ALLOW_SENSITIVE_HEADERS` (see [Revealing sensitive headers](#revealing-sensitive-headers))
 - Secret environment variables - values of `SECRET` variables are redacted in `caido_list_environments`; the same opt-out applies
 - Read-only mode - `serve --read-only` registers only the tools that read state, so nothing that sends traffic or changes the project can be called (see [Read-only mode](#read-only-mode))
+- Scope enforcement - `serve --enforce-scope` refuses any request, batch, race or WebSocket connection to a host outside the project scope, and withholds the tools that could change the scope (see [Scope enforcement](#scope-enforcement))
 - Tool annotations - every tool declares `readOnlyHint`/`destructiveHint`/`idempotentHint`/`openWorldHint` so MCP clients can distinguish read-only, destructive, and external-network tools
 - Session cookie jar - RFC 6265 jar per replay session; `Set-Cookie` from a response is auto-attached to the next `send_request` against the same session
 - Response fingerprinting - auto-detects content kind (json/html/xml/text/binary) so agents know what they're dealing with
@@ -122,6 +123,33 @@ Start the server with `--read-only` (or set `CAIDO_MCP_READ_ONLY=1`) to expose o
 ```
 
 The startup banner reports the mode and the reduced tool count. A `CAIDO_MCP_READ_ONLY` value that is not a boolean stops the server instead of starting it with every tool.
+
+### Scope enforcement
+
+Start the server with `--enforce-scope` (or set `CAIDO_MCP_ENFORCE_SCOPE=1`) to make the project scope a hard boundary for the agent:
+
+```json
+{
+  "mcpServers": {
+    "caido": {
+      "command": "caido-mcp-server",
+      "args": ["serve", "--enforce-scope"],
+      "env": {
+        "CAIDO_URL": "http://127.0.0.1:8080"
+      }
+    }
+  }
+}
+```
+
+| | |
+|---|---|
+| Refused | A target host outside every scope, for `caido_send_request`, `caido_edit_request`, `caido_batch_send` (per request), `caido_race_pipeline`, `caido_race_window_send` and `caido_ws_connect` |
+| Withheld | `caido_create_scope`, `caido_update_scope`, `caido_delete_scope`, `caido_select_project`, `caido_create_project`, `caido_delete_project`, so the agent cannot move the boundary |
+| Fails closed | Scopes cannot be read, the project has no scope, or the only scopes have an empty allowlist: nothing is sent |
+| Not covered | Traffic the server does not address itself: forwarding an intercepted browser request, starting an Automate session, running a workflow |
+
+A host is in scope when one scope's allowlist matches it and that scope's denylist does not, the same rule `caido_is_in_scope` reports. Scopes are read on every send, so a change you make in Caido applies to the next request. A refused target is refused before any Replay session is created.
 
 ---
 

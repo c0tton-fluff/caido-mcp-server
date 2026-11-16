@@ -349,6 +349,10 @@ func WSConnect(
 	if opts.Raw == "" {
 		return nil, fmt.Errorf("handshake request is empty")
 	}
+	// Also with SkipOpen: a refused target is not staged in a tab either.
+	if err := CheckTarget(ctx, client, opts.Conn.Host); err != nil {
+		return nil, err
+	}
 	conn := &WSConnection{SessionID: opts.SessionID}
 	if opts.SessionID == "" {
 		input := map[string]any{"kind": "WS", "requestSource": rawRequestSource(opts.Raw, opts.Conn)}

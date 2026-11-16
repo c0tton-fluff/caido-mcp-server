@@ -29,8 +29,38 @@ Workflow
 Credentials
 - Values of Authorization, Cookie, Set-Cookie and similar headers, and of SECRET environment variables, come back as [REDACTED]. Redacted means present, not missing.`
 
+// InstructionsMinimal replaces the workflow text when toolsets restrict
+// the server (Options.Toolsets): which tools exist is then the operator's
+// choice, so it names none and keeps only the contract every toolset shares.
+const InstructionsMinimal = `Caido MCP server: drive the Caido web proxy for authorized security testing. This server exposes a selected subset of its tools; use the ones listed and do not assume others exist. Everything sent through these tools is proxied by Caido and visible to the operator in its UI.
+
+Credentials
+- Values of Authorization, Cookie, Set-Cookie and similar headers, and of SECRET environment variables, come back as [REDACTED]. Redacted means present, not missing. Never put the literal [REDACTED] into a request you send.
+- Requests sent on the same Replay session share a cookie jar: Set-Cookie values from a response are stored and injected into later requests on that session automatically.`
+
 // InstructionsScopeEnforced is appended to the instructions when scope is
-// enforced (Options.EnforceScope).
+// enforced (Options.EnforceScope). It names no tool, so it holds for every
+// toolset selection.
 const InstructionsScopeEnforced = `
 
-Scope is enforced: a request, batch, race or WebSocket connection to a host outside the project scope is refused, and the tools that create, change or delete scopes or switch projects are not available. Check a host with caido_is_in_scope; if a target you need is out of scope, ask the operator to add it in Caido.`
+Scope is enforced: a request, batch, race or WebSocket connection to a host outside the project scope is refused, and the tools that create, change or delete scopes or switch projects are not available. If a target you need is out of scope, ask the operator to add it in Caido.`
+
+// InstructionsFor returns the server instructions matching opts, so the
+// text never points an agent at a tool that is not registered.
+func InstructionsFor(opts Options) string {
+	var text string
+	switch {
+	case len(opts.Toolsets) > 0:
+		text = InstructionsMinimal
+	case opts.ReadOnly:
+		// Read-only mode has no tool that sends, so the scope note below
+		// would describe refusals that cannot happen.
+		return InstructionsReadOnly
+	default:
+		text = Instructions
+	}
+	if opts.EnforceScope && !opts.ReadOnly {
+		text += InstructionsScopeEnforced
+	}
+	return text
+}

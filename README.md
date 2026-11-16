@@ -56,6 +56,7 @@ Both share the same auth token, the same Go SDK, and the same codebase.
 - Secret environment variables - values of `SECRET` variables are redacted in `caido_list_environments`; the same opt-out applies
 - Read-only mode - `serve --read-only` registers only the tools that read state, so nothing that sends traffic or changes the project can be called (see [Read-only mode](#read-only-mode))
 - Scope enforcement - `serve --enforce-scope` refuses any request, batch, race or WebSocket connection to a host outside the project scope, and withholds the tools that could change the scope (see [Scope enforcement](#scope-enforcement))
+- Toolsets and compact mode - `serve --toolsets core --compact` cuts the advertised tool list from about 92 KB to about 23 KB, so an agent spends less context before its first call (see [Toolsets](#toolsets))
 - Tool annotations - every tool declares `readOnlyHint`/`destructiveHint`/`idempotentHint`/`openWorldHint` so MCP clients can distinguish read-only, destructive, and external-network tools
 - Session cookie jar - RFC 6265 jar per replay session; `Set-Cookie` from a response is auto-attached to the next `send_request` against the same session
 - Response fingerprinting - auto-detects content kind (json/html/xml/text/binary) so agents know what they're dealing with
@@ -123,6 +124,52 @@ Start the server with `--read-only` (or set `CAIDO_MCP_READ_ONLY=1`) to expose o
 ```
 
 The startup banner reports the mode and the reduced tool count. A `CAIDO_MCP_READ_ONLY` value that is not a boolean stops the server instead of starting it with every tool.
+
+### Toolsets
+
+Every MCP client loads the full tool list into the model's context at the start of a session. With all 76 tools that list is about 92 KB. Two options shrink it:
+
+- `--toolsets` (or `CAIDO_MCP_TOOLSETS`) registers only the toolsets you name, comma separated.
+- `--compact` (or `CAIDO_MCP_COMPACT=1`) leaves the output schemas out of the list. Results still carry structured content.
+
+| Configuration | Tools | Tool list |
+|---------------|-------|-----------|
+| default | 76 | 92.0 KB |
+| `--compact` | 76 | 62.0 KB |
+| `--toolsets core` | 31 | 39.4 KB |
+| `--toolsets core --compact` | 31 | 23.3 KB |
+
+| Toolset | Tools |
+|---------|-------|
+| `history` | Captured HTTP traffic: list, read, diff, sitemap, body conversion |
+| `replay` | Send requests, replay sessions and collections, session cookie jars |
+| `websocket` | WebSocket history and WebSocket replay |
+| `race` | Race pipelines and the raw-socket race window |
+| `scopes` | List, check, create, change and delete scopes |
+| `findings` | List, create, delete and export findings |
+| `automate` | Automate sessions, entries and task control |
+| `intercept` | Intercept queue and TLS pass-through options |
+| `tamper` | Match & Replace rules |
+| `workflows` | List, run and toggle workflows |
+| `environments` | Environments and their variables |
+| `admin` | Instance, projects, filter presets, hosted files, tasks, plugins |
+| `core` | Shorthand for `history,replay,scopes,findings` |
+
+```json
+{
+  "mcpServers": {
+    "caido": {
+      "command": "caido-mcp-server",
+      "args": ["serve", "--toolsets", "core,websocket", "--compact"],
+      "env": {
+        "CAIDO_URL": "http://127.0.0.1:8080"
+      }
+    }
+  }
+}
+```
+
+Toolsets combine with `--read-only` and `--enforce-scope`. An unknown toolset name stops the server with the list of valid names. With a toolset selection the server instructions name no specific tool, since which tools exist is then your choice.
 
 ### Scope enforcement
 

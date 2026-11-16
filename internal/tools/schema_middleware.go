@@ -33,7 +33,11 @@ import (
 // sends an explicit null for an optional param is accepted as before.
 //
 // schema_nullunion_test.go guards against a regression here.
-func normalizeToolSchemas() mcp.Middleware {
+//
+// With compact set it also drops each tool's output schema from the list:
+// the schemas are about a third of the advertised bytes, every session pays
+// for them up front, and results carry structured content either way.
+func normalizeToolSchemas(compact bool) mcp.Middleware {
 	return func(next mcp.MethodHandler) mcp.MethodHandler {
 		return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
 			result, err := next(ctx, method, req)
@@ -48,14 +52,17 @@ func normalizeToolSchemas() mcp.Middleware {
 			// each tool (and clone its schema) before mutating -- never touch
 			// the shared state that concurrent list calls also read.
 			for i, tool := range list.Tools {
-				schema, ok := tool.InputSchema.(*jsonschema.Schema)
-				if !ok || schema == nil {
+				toolCopy := *tool
+				if compact {
+					toolCopy.OutputSchema = nil
+				}
+				if schema, ok := tool.InputSchema.(*jsonschema.Schema); ok && schema != nil {
+					cloned := schema.CloneSchemas()
+					stripNullUnions(cloned)
+					toolCopy.InputSchema = cloned
+				} else if !compact {
 					continue
 				}
-				cloned := schema.CloneSchemas()
-				stripNullUnions(cloned)
-				toolCopy := *tool
-				toolCopy.InputSchema = cloned
 				list.Tools[i] = &toolCopy
 			}
 			return result, err

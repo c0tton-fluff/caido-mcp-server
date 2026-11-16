@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- **`caido_list_requests` can show a regex hit without returning the body.** The new `snippet` option (`{regex, context, maxPerRequest, parts}`) reads the raw message of each returned row and reports up to 3 matches per row by default, each with the part, the match's byte offset and a context excerpt (40 bytes each side by default). Searching `responseBody` for `AKIA[0-9A-Z]{16}` finds a key inside a 150 KB script without paging bodies through the model. `httpql` still selects the rows; the scan only annotates them, one request per row with 8 fetches in flight, 1 MiB searched per part (flagged as `snippetScanTruncated`). A new `fields` option adds `createdAt`, `host`, `path`, `query`, `source`, `responseLength` and `roundtripTime` to each row, and rows that did not come from the proxy carry their `source` (`REPLAY`, `AUTOMATE`, `WORKFLOW`, `PLUGIN`, `IMPORT`) without asking.
+
 ## [4.5.0] - 2026-11-16
 
 Safety modes for handing the server to an agent, WebSocket replay, and a tool list that can shrink to a quarter of its size. Scope enforcement, read-only mode and secret redaction decide what an agent is able to do instead of trusting it to behave. Works with Caido 0.57+; the WebSocket replay tools need 0.59. Verified against a live Caido 0.59.1 server. 76 MCP tools, 6 resources.

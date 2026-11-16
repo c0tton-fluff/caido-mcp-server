@@ -144,7 +144,7 @@ func TestListHostedFilesTool(t *testing.T) {
 }
 
 // TestListPluginsTool covers caido_list_plugins.
-// SDK op: ListPluginPackages -> data.pluginPackages [{ id, name, description, version, ... }].
+// SDK op: PluginPackagesWithBackends -> data.pluginPackages [{ id, name, description, version, plugins }].
 func TestListPluginsTool(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -193,7 +193,7 @@ func TestListPluginsTool(t *testing.T) {
 				tools.RegisterListPluginsTool(s, c)
 			})
 			if !tt.mockErr {
-				env.Mock.On("ListPluginPackages", tt.mockData)
+				env.Mock.On("PluginPackagesWithBackends", tt.mockData)
 			}
 
 			result := env.CallTool(t, "caido_list_plugins", map[string]any{})

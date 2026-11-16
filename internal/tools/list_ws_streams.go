@@ -39,6 +39,11 @@ type ListWsStreamsOutput struct {
 	NextCursor string            `json:"nextCursor,omitempty"`
 }
 
+// maxWsStreamPages bounds how many upstream pages one call reads while it
+// looks for WebSocket streams, so a project holding almost nothing but HTTP
+// traffic cannot turn one tool call into an unbounded scan.
+const maxWsStreamPages = 20
+
 func listWsStreamsHandler(
 	client *caido.Client,
 ) func(context.Context, *mcp.CallToolRequest, ListWsStreamsInput) (*mcp.CallToolResult, ListWsStreamsOutput, error) {
@@ -49,54 +54,82 @@ func listWsStreamsHandler(
 	) (*mcp.CallToolResult, ListWsStreamsOutput, error) {
 		limit := clampLimit(input.Limit, 20, 100)
 
-		opts := &caido.ListStreamsOptions{
-			First: &limit,
-		}
-		if input.After != "" {
-			opts.After = &input.After
-		}
+		// Caido 0.57 removed the protocol query argument, so WebSocket
+		// streams are filtered client-side. Filtering a single page is not
+		// enough: a page of mixed streams can hold one WebSocket and stop
+		// early, so pages are read until the requested count is met.
 		if input.ScopeID != "" {
 			if err := requireScope(ctx, client, input.ScopeID); err != nil {
 				return nil, ListWsStreamsOutput{}, err
 			}
-			opts.ScopeID = &input.ScopeID
+		}
+		output := ListWsStreamsOutput{Streams: []WsStreamSummary{}}
+		after := input.After
+		lastCursor := input.After
+
+		// finish links REPLAY streams back to the replay session that opened
+		// them before handing the collected page back.
+		finish := func() (*mcp.CallToolResult, ListWsStreamsOutput, error) {
+			linkReplaySessions(ctx, client, output.Streams)
+			return nil, output, nil
 		}
 
-		resp, err := client.Streams.List(ctx, opts)
-		if err != nil {
-			return nil, ListWsStreamsOutput{}, fmt.Errorf(
-				"failed to list ws streams: %w", err,
-			)
-		}
-
-		conn := resp.Streams
-		output := ListWsStreamsOutput{
-			Streams: make([]WsStreamSummary, 0, len(conn.Edges)),
-		}
-		for _, edge := range conn.Edges {
-			n := edge.Node
-			// Caido 0.57 removed the protocol query argument; filter to
-			// WebSocket streams client-side.
-			if n.Protocol != gen.StreamProtocolWs {
-				continue
+		for range maxWsStreamPages {
+			opts := &caido.ListStreamsOptions{First: &limit}
+			if after != "" {
+				opts.After = &after
 			}
-			output.Streams = append(output.Streams, WsStreamSummary{
-				ID:        n.Id,
-				Host:      n.Host,
-				Port:      n.Port,
-				Path:      n.Path,
-				IsTLS:     n.IsTls,
-				Direction: string(n.Direction),
-				Source:    string(n.Source),
-				CreatedAt: n.CreatedAt,
-			})
-		}
-		linkReplaySessions(ctx, client, output.Streams)
-		output.HasMore, output.NextCursor = pageCursor(
-			conn.PageInfo.HasNextPage, conn.PageInfo.EndCursor,
-		)
+			if input.ScopeID != "" {
+				opts.ScopeID = &input.ScopeID
+			}
 
-		return nil, output, nil
+			resp, err := client.Streams.List(ctx, opts)
+			if err != nil {
+				return nil, ListWsStreamsOutput{}, fmt.Errorf(
+					"failed to list ws streams: %w", err,
+				)
+			}
+
+			edges := resp.Streams.Edges
+			if len(edges) == 0 {
+				return finish()
+			}
+			for _, edge := range edges {
+				n := edge.Node
+				if n.Protocol == gen.StreamProtocolWs {
+					if len(output.Streams) == limit {
+						output.HasMore = true
+						output.NextCursor = lastCursor
+						return finish()
+					}
+					output.Streams = append(output.Streams, WsStreamSummary{
+						ID:        n.Id,
+						Host:      n.Host,
+						Port:      n.Port,
+						Path:      n.Path,
+						IsTLS:     n.IsTls,
+						Direction: string(n.Direction),
+						Source:    string(n.Source),
+						CreatedAt: n.CreatedAt,
+					})
+				}
+				// Non-WebSocket edges are consumed too: resuming from this
+				// cursor skips them, which is what keeps next page forward.
+				lastCursor = edge.Cursor
+			}
+
+			if !resp.Streams.PageInfo.HasNextPage ||
+				resp.Streams.PageInfo.EndCursor == nil {
+				return finish()
+			}
+			after = *resp.Streams.PageInfo.EndCursor
+			lastCursor = after
+		}
+		// Page budget spent and the response is still short: hand back a
+		// cursor so the caller can continue instead of losing streams.
+		output.HasMore = true
+		output.NextCursor = lastCursor
+		return finish()
 	}
 }
 
@@ -132,7 +165,9 @@ func RegisterListWsStreamsTool(server *mcp.Server, client *caido.Client) {
 		Title: "List WebSocket Streams",
 		Description: `List WebSocket streams (connections) from the WebSocket tab. ` +
 			`Returns id/host/port/path/direction/source, plus replaySessionId for streams opened from a WS replay session. ` +
-			`Use the stream id with caido_list_ws_messages to read frames. ` +
+			`Use the stream id with caido_list_ws_messages to read frames, and ` +
+			`caido_create_replay_session with a captured handshake request to replay one. ` +
+			`Pages through mixed traffic so the requested number of WebSocket streams is met. ` +
 			`Params: limit (default 20, max 100), after (cursor), scope_id (optional).`,
 		Annotations: readOnlyAnn(),
 	}, listWsStreamsHandler(client))

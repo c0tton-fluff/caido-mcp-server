@@ -288,7 +288,7 @@ func TestGetReplayEntryTool(t *testing.T) {
 }
 
 // TestGetSitemapTool covers caido_get_sitemap root path.
-// SDK op: ListSitemapRootEntries -> data.sitemapRootEntries.edges[].node { id, label, kind, hasDescendants }.
+// Op: SitemapRootEntries -> data.sitemapRootEntries { count, edges[].node { id, label, kind, hasDescendants, metadata } }.
 func TestGetSitemapTool(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -304,6 +304,7 @@ func TestGetSitemapTool(t *testing.T) {
 			input: map[string]any{},
 			mockData: map[string]any{
 				"sitemapRootEntries": map[string]any{
+					"count": map[string]any{"value": 1},
 					"edges": []map[string]any{
 						{
 							"node": map[string]any{
@@ -311,6 +312,7 @@ func TestGetSitemapTool(t *testing.T) {
 								"label":          "example.com",
 								"kind":           "DOMAIN",
 								"hasDescendants": true,
+								"metadata":       map[string]any{"isTls": true, "port": 443},
 							},
 						},
 					},
@@ -324,6 +326,7 @@ func TestGetSitemapTool(t *testing.T) {
 			input: map[string]any{},
 			mockData: map[string]any{
 				"sitemapRootEntries": map[string]any{
+					"count": map[string]any{"value": 0},
 					"edges": []map[string]any{},
 				},
 			},
@@ -342,8 +345,9 @@ func TestGetSitemapTool(t *testing.T) {
 			env := testutil.NewMCPTestEnv(t, func(s *mcp.Server, c *caido.Client) {
 				tools.RegisterGetSitemapTool(s, c)
 			})
+			env.Mock.ValidateAgainstSchema()
 			if !tt.mockErr {
-				env.Mock.On("ListSitemapRootEntries", tt.mockData)
+				env.Mock.On("SitemapRootEntries", tt.mockData)
 			}
 
 			result := env.CallTool(t, "caido_get_sitemap", tt.input)
@@ -360,8 +364,25 @@ func TestGetSitemapTool(t *testing.T) {
 			if len(out.Entries) != tt.wantCount {
 				t.Fatalf("entries count = %d, want %d", len(out.Entries), tt.wantCount)
 			}
-			if tt.wantCount > 0 && out.Entries[0].Label != tt.wantLabel {
-				t.Errorf("label = %q, want %q", out.Entries[0].Label, tt.wantLabel)
+			if out.TotalEntries != tt.wantCount {
+				t.Errorf("totalEntries = %d, want %d", out.TotalEntries, tt.wantCount)
+			}
+			if tt.wantCount == 0 {
+				return
+			}
+			root := out.Entries[0]
+			if root.Label != tt.wantLabel {
+				t.Errorf("label = %q, want %q", root.Label, tt.wantLabel)
+			}
+			if root.Port == nil || *root.Port != 443 || !root.IsTLS {
+				t.Errorf("port/isTls = %v/%v, want 443/true", root.Port, root.IsTLS)
+			}
+			// The default listing is one request: no history count per root.
+			if root.CapturedRequests != nil {
+				t.Errorf("capturedRequests = %d without includeRequestCounts", *root.CapturedRequests)
+			}
+			if n := env.Mock.Calls("ListRequests"); n != 0 {
+				t.Errorf("default root listing made %d history counts, want 0", n)
 			}
 		})
 	}

@@ -11,6 +11,7 @@ import (
 	"sync"
 	"unicode/utf8"
 
+	"github.com/c0tton-fluff/caido-mcp-server/v4/internal/httputil"
 	caido "github.com/caido-community/sdk-go"
 )
 
@@ -57,7 +58,9 @@ type ListRequestsSnippetInput struct {
 	Parts []string `json:"parts,omitempty" jsonschema:"Parts to search: responseBody (default), requestBody, responseHeaders, requestHeaders"`
 }
 
-// RequestMatch is one regex hit inside a request or response part.
+// RequestMatch is one regex hit inside a request or response part. Header
+// parts are searched after credential redaction, so their offsets count bytes
+// of the redacted header block, which is what caido_get_request returns too.
 type RequestMatch struct {
 	Part   string `json:"part"`
 	Offset int    `json:"offset"`
@@ -153,6 +156,14 @@ func (s *snippetSpec) annotate(
 			defer wg.Done()
 			sem <- struct{}{}
 			defer func() { <-sem }()
+			// A panic in this goroutine would end the whole server, not
+			// just this call; report it on the row instead.
+			defer func() {
+				if r := recover(); r != nil {
+					rows[i].Matches = nil
+					rows[i].SnippetError = fmt.Sprintf("snippet scan failed: %v", r)
+				}
+			}()
 			s.scanRow(ctx, client, &rows[i])
 		}(i)
 	}
@@ -175,14 +186,17 @@ func (s *snippetSpec) scanRow(
 	}
 
 	r := resp.Request
+	// Header blocks are searched in their redacted form. A snippet is a way
+	// to read part of a message, so it must not hand back the Authorization,
+	// Cookie or Set-Cookie value that every other tool withholds.
 	reqHeaders, reqBody := splitRaw(r.Raw)
 	parts := map[string][]byte{
-		"requestHeaders": reqHeaders,
+		"requestHeaders": redactHeaderBlock(reqHeaders),
 		"requestBody":    reqBody,
 	}
 	if r.Response != nil {
 		respHeaders, respBody := splitRaw(r.Response.Raw)
-		parts["responseHeaders"] = respHeaders
+		parts["responseHeaders"] = redactHeaderBlock(respHeaders)
 		parts["responseBody"] = respBody
 	}
 
@@ -226,7 +240,15 @@ func (s *snippetSpec) match(
 	for from < start && !utf8.RuneStart(data[from]) {
 		from++
 	}
-	for to < len(data) && !utf8.RuneStart(data[to]) {
+	// The end only moves back as far as the end of the match (or its start,
+	// when a long match was capped above). Binary data can hold a long run
+	// of continuation bytes; walking back through all of it would carry the
+	// end past from.
+	floor := end
+	if to < end {
+		floor = start
+	}
+	for to > floor && to < len(data) && !utf8.RuneStart(data[to]) {
 		to--
 	}
 	return RequestMatch{
@@ -235,6 +257,15 @@ func (s *snippetSpec) match(
 		ContextOffset: from,
 		Context:       string(data[from:to]),
 	}
+}
+
+// redactHeaderBlock applies the server's credential redaction to a header
+// block (first line included, no body).
+func redactHeaderBlock(headers []byte) []byte {
+	if len(headers) == 0 {
+		return headers
+	}
+	return []byte(httputil.RedactRawHeaders(string(headers)))
 }
 
 // splitRaw decodes a base64 raw message into its header block and body. The

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"strings"
 	"testing"
-	"time"
 	"unicode/utf8"
 
 	"github.com/c0tton-fluff/caido-mcp-server/v4/internal/testutil"
@@ -350,7 +349,8 @@ func TestListRequestsFields(t *testing.T) {
 		t.Fatalf("got %d rows, want 1", len(out.Requests))
 	}
 	row := out.Requests[0]
-	wantCreated := time.UnixMilli(1714900000000).Format(time.RFC3339)
+	// UTC, whatever the zone of the machine running the server.
+	const wantCreated = "2024-05-05T09:06:40Z"
 	if row.CreatedAt == nil || *row.CreatedAt != wantCreated {
 		t.Errorf("createdAt = %v, want %q", row.CreatedAt, wantCreated)
 	}
@@ -549,5 +549,95 @@ func TestListRequestsFieldsSourceOnIntercept(t *testing.T) {
 	}
 	if row.Host != nil || row.Path != nil || row.CreatedAt != nil {
 		t.Errorf("unrequested fields were set: %+v", row)
+	}
+}
+
+// TestListRequestsSnippetHeadersAreRedacted asserts a header snippet cannot
+// return a credential the rest of the server withholds: header parts are
+// searched in their redacted form.
+func TestListRequestsSnippetHeadersAreRedacted(t *testing.T) {
+	payload := snippetGetRequestResponse("req-auth", "", "ok")
+	request := payload["request"].(map[string]any)
+	request["raw"] = base64.StdEncoding.EncodeToString([]byte(
+		"GET / HTTP/1.1\r\nHost: static.localhost\r\n" +
+			"Authorization: Bearer SECRET-TOKEN-123\r\n" +
+			"Cookie: sid=SECRET-COOKIE-456\r\n\r\n",
+	))
+	request["response"].(map[string]any)["raw"] = base64.StdEncoding.EncodeToString([]byte(
+		"HTTP/1.1 200 OK\r\nSet-Cookie: sid=SECRET-SETCOOKIE-789\r\n\r\nok",
+	))
+	args := map[string]any{
+		"snippet": map[string]any{
+			"regex": "(?i)(authorization|cookie): .+",
+			"parts": []string{"requestHeaders", "responseHeaders"},
+		},
+	}
+	call := func(t *testing.T) (string, tools.ListRequestsOutput) {
+		t.Helper()
+		env := newListRequestsEnv(t, testutil.ListRequestsResponse("req-auth"))
+		env.Mock.On("GetRequest", payload)
+		result := env.CallTool(t, "caido_list_requests", args)
+		if result.IsError {
+			t.Fatalf("unexpected error: %v", result.Content)
+		}
+		text := result.Content[0].(*mcp.TextContent).Text
+		return text, testutil.UnmarshalToolResult[tools.ListRequestsOutput](t, result)
+	}
+
+	text, out := call(t)
+	if strings.Contains(text, "SECRET-") {
+		t.Fatalf("snippet returned a redacted credential: %s", text)
+	}
+	matches := out.Requests[0].Matches
+	if len(matches) != 3 {
+		t.Fatalf("got %d matches, want 3 (Authorization, Cookie, Set-Cookie): %+v", len(matches), matches)
+	}
+	for _, m := range matches {
+		if !strings.Contains(m.Context, "[REDACTED]") {
+			t.Errorf("%s match context = %q, want the redacted value", m.Part, m.Context)
+		}
+	}
+
+	// Positive control: the operator's opt-out is the one switch that shows
+	// credentials, and it applies here as it does to caido_get_request.
+	t.Run("opt-out shows values", func(t *testing.T) {
+		t.Setenv("CAIDO_ALLOW_SENSITIVE_HEADERS", "1")
+		text, _ := call(t)
+		if !strings.Contains(text, "SECRET-TOKEN-123") {
+			t.Errorf("opt-out did not show the header value: %s", text)
+		}
+	})
+}
+
+// TestListRequestsSnippetBinaryBodyDoesNotPanic covers a regex that matches
+// bytes which are not UTF-8 inside a long run of continuation bytes. Moving
+// the excerpt end back to a rune start used to walk it past the excerpt start
+// and panic in the scan goroutine, which ends the server process.
+func TestListRequestsSnippetBinaryBodyDoesNotPanic(t *testing.T) {
+	body := "x" + strings.Repeat("\x80", 300)
+	env := newListRequestsEnv(t, testutil.ListRequestsResponse("req-bin"))
+	env.Mock.On("GetRequest", snippetGetRequestResponse("req-bin", "", body))
+
+	result := env.CallTool(t, "caido_list_requests", map[string]any{
+		"snippet": map[string]any{"regex": `[^a-z]{50}`},
+	})
+	if result.IsError {
+		t.Fatalf("unexpected error: %v", result.Content)
+	}
+	out := testutil.UnmarshalToolResult[tools.ListRequestsOutput](t, result)
+	row := out.Requests[0]
+	if row.SnippetError != "" {
+		t.Fatalf("snippetError = %q", row.SnippetError)
+	}
+	if len(row.Matches) != 3 || !row.MatchesTruncated {
+		t.Fatalf("matches = %d, truncated = %v; want 3, true", len(row.Matches), row.MatchesTruncated)
+	}
+	for i, m := range row.Matches {
+		if want := 1 + 50*i; m.Offset != want {
+			t.Errorf("match %d offset = %d, want %d", i, m.Offset, want)
+		}
+		if m.Context == "" {
+			t.Errorf("match %d has an empty context", i)
+		}
 	}
 }

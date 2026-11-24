@@ -146,7 +146,7 @@ func applyRequestFields(
 ) {
 	if fields != nil {
 		if fields["createdAt"] {
-			created := time.UnixMilli(r.CreatedAt).Format(time.RFC3339)
+			created := time.UnixMilli(r.CreatedAt).UTC().Format(time.RFC3339)
 			summary.CreatedAt = &created
 		}
 		if fields["host"] {
@@ -309,7 +309,7 @@ func RegisterListRequestsTool(
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "caido_list_requests",
 		Title:       "List Requests",
-		Description: `List HTTP requests. Filter with httpql (e.g. req.host.eq:"example.com"). On Caido 0.58+ match headers and bodies directly instead of scanning raw: req.header["Authorization"].cont:"Bearer", resp.body.cont:"stack trace". Returns id/method/url/status, and totalCount = how many requests match httpql. Newest first in one call: limit:5 with order:"desc" (sorts by id); orderBy picks the field (createdAt, statusCode, roundtripTime, responseLength, host, path, ...). Counting matches is limit:1 plus totalCount; no paging needed. scopeId restricts the listing and the count to one scope (caido_list_scopes). See a value without downloading bodies: snippet:{regex:"AKIA[0-9A-Z]{16}"} returns each hit with its part, byte offset and context instead of the bodies. fields adds createdAt/host/path/query/source/responseLength/roundtripTime to each row, and rows that did not come from the proxy carry a source (REPLAY, AUTOMATE, WORKFLOW, PLUGIN, IMPORT) without asking. Paginate with after from nextCursor, which keeps the same order.`,
+		Description: `List HTTP requests. Filter with httpql (e.g. req.host.eq:"example.com"). On Caido 0.58+ match headers and bodies directly instead of scanning raw: req.header["Authorization"].cont:"Bearer", resp.body.cont:"stack trace". Returns id/method/url/status, and totalCount = how many requests match httpql. Newest first in one call: limit:5 with order:"desc" (sorts by id); orderBy picks the field (createdAt, statusCode, roundtripTime, responseLength, host, path, ...). Counting matches is limit:1 plus totalCount; no paging needed. scopeId restricts the listing and the count to one scope (caido_list_scopes). Find a value without downloading bodies: snippet:{regex:"AKIA[0-9A-Z]{16}"} returns each hit's part, byte offset and context; header parts are searched redacted. fields adds createdAt/host/path/query/source/responseLength/roundtripTime per row; rows not from the proxy always carry source (REPLAY, AUTOMATE, ...). Paginate with after from nextCursor, which keeps the same order.`,
 		InputSchema: schemaFor[ListRequestsInput](func(s *jsonschema.Schema) {
 			if p := prop(s, "httpql"); p != nil {
 				p.MaxLength = intPtr(10000)

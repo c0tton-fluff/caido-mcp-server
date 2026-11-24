@@ -138,29 +138,99 @@ func TestParseBase64With_PNGRoundTripPages(t *testing.T) {
 	}
 }
 
-// TestParseRawWith_TextTrimsCutRune asserts a byte limit that lands inside a
-// rune does not return half a rune as text.
-func TestParseRawWith_TextTrimsCutRune(t *testing.T) {
+// TestParseRawWith_TextKeepsCutRuneWhole asserts a byte limit that lands
+// inside a rune returns the whole rune with the page it starts in, instead of
+// half a rune or a silently shortened page.
+func TestParseRawWith_TextKeepsCutRuneWhole(t *testing.T) {
 	// "aé" is three bytes; a limit of two cuts é in half. Auto must keep
-	// this text (trimmed), not fall back to base64 because of the cut.
-	raw := rawMessage("text/plain", []byte("aé"))
+	// this text, not fall back to base64 because of the cut.
+	cases := []struct {
+		body      string
+		truncated bool
+	}{
+		{"aé", false}, // the completed rune reaches the end of the body
+		{"aéb", true}, // more follows
+	}
+	for _, tc := range cases {
+		raw := rawMessage("text/plain", []byte(tc.body))
+		for _, encoding := range []Encoding{EncodingText, EncodingAuto} {
+			result := ParseRawWith(raw, false, true, 0, 2, encoding)
+			if result == nil {
+				t.Fatalf("%s: expected non-nil result", encoding)
+			}
+			if result.Body != "aé" {
+				t.Errorf("%s %q: body = %q, want %q", encoding, tc.body, result.Body, "aé")
+			}
+			if result.BodyEncoding != "" {
+				t.Errorf("%s %q: body became base64", encoding, tc.body)
+			}
+			if result.Truncated != tc.truncated {
+				t.Errorf("%s %q: truncated = %v, want %v", encoding, tc.body, result.Truncated, tc.truncated)
+			}
+			if result.BodySize != len(tc.body) {
+				t.Errorf("%s %q: bodySize = %d, want %d", encoding, tc.body, result.BodySize, len(tc.body))
+			}
+		}
+	}
+}
+
+// TestParseRawWith_TextPagesAreLossless pages a multi-byte text body the way
+// an agent does, bodyOffset += bodyLimit, at every small page size. Every
+// rune must come back exactly once: a rune cut by a page boundary used to
+// vanish from both pages.
+func TestParseRawWith_TextPagesAreLossless(t *testing.T) {
+	body := "naïve café – 日本語 🙂 end"
+	raw := rawMessage("application/json", []byte(body))
 	for _, encoding := range []Encoding{EncodingText, EncodingAuto} {
-		result := ParseRawWith(raw, false, true, 0, 2, encoding)
-		if result == nil {
-			t.Fatalf("%s: expected non-nil result", encoding)
+		for size := 1; size <= 9; size++ {
+			var joined string
+			for offset := 0; offset < len(body); offset += size {
+				page := ParseRawWith(raw, false, true, offset, size, encoding)
+				if page.BodyEncoding != "" {
+					t.Fatalf("%s size %d offset %d: text page became base64", encoding, size, offset)
+				}
+				joined += page.Body
+			}
+			if joined != body {
+				t.Errorf("%s size %d: pages join to %q, want %q", encoding, size, joined, body)
+			}
 		}
-		if result.Body != "a" {
-			t.Errorf("%s: body = %q, want %q", encoding, result.Body, "a")
-		}
-		if result.BodyEncoding != "" {
-			t.Errorf("%s: body became base64", encoding)
-		}
-		if !result.Truncated {
-			t.Errorf("%s: expected truncated", encoding)
-		}
-		if result.BodySize != 3 {
-			t.Errorf("%s: bodySize = %d, want 3", encoding, result.BodySize)
-		}
+	}
+}
+
+// TestParseRawWith_StrayByteAtCutIsNotDropped asserts a page that ends on a
+// byte which is not part of any rune is returned as bytes. Treating that byte
+// as a cut rune and dropping it would lose it without a trace.
+func TestParseRawWith_StrayByteAtCutIsNotDropped(t *testing.T) {
+	body := append([]byte("aaaaaaaaa"), 0xFF, 0xFE, 0x00, 0x01)
+	raw := rawMessage("application/octet-stream", body)
+	result := ParseRawWith(raw, false, true, 0, 10, EncodingAuto)
+	if result.BodyEncoding != "base64" {
+		t.Fatalf("encoding = %q, body = %q; want base64", result.BodyEncoding, result.Body)
+	}
+	page, err := base64.StdEncoding.DecodeString(result.BodyBase64)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(page, body[:10]) {
+		t.Errorf("page = %x, want %x", page, body[:10])
+	}
+	if !result.Truncated {
+		t.Error("expected truncated")
+	}
+}
+
+// TestParseRawWith_Base64OffsetIsReported asserts the envelope names the byte
+// offset of the slice it carries.
+func TestParseRawWith_Base64OffsetIsReported(t *testing.T) {
+	body := pngBody()
+	result := ParseRawWith(rawMessage("image/png", body), false, true, 200, 16, EncodingAuto)
+	if result.BodyOffset == nil || *result.BodyOffset != 200 {
+		t.Fatalf("bodyOffset = %v, want 200", result.BodyOffset)
+	}
+	page, _ := base64.StdEncoding.DecodeString(result.BodyBase64)
+	if !bytes.Equal(page, body[200:216]) {
+		t.Errorf("page = %x, want %x", page, body[200:216])
 	}
 }
 
@@ -189,10 +259,11 @@ func TestParseRawWith_ForcedTextKeepsRawBytes(t *testing.T) {
 	if result.BodyEncoding != "" || result.BodyBase64 != "" {
 		t.Errorf("forced text returned an envelope: %+v", result)
 	}
-	// The PNG signature starts with 0x89, a UTF-8 continuation byte, so text
-	// mode drops it; the remaining 31 bytes are valid and are kept.
-	if len(result.Body) != 31 {
-		t.Errorf("body length = %d, want 31", len(result.Body))
+	// The PNG signature starts with 0x89, a UTF-8 continuation byte. It is
+	// not the tail of a cut rune, so text mode keeps all 32 bytes, as every
+	// release before bodyEncoding did.
+	if result.Body != string(body[:32]) {
+		t.Errorf("body = %x, want %x", result.Body, body[:32])
 	}
 }
 

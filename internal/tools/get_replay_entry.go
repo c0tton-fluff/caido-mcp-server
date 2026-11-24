@@ -107,7 +107,7 @@ func RegisterGetReplayEntryTool(
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "caido_get_replay_entry",
 		Title:       "Get Replay Entry",
-		Description: `Get replay entry with full request and response content. Use after send_request timeout to retrieve results. The response body is text when UTF-8 and base64 (with bodyEncoding:"base64", bodySize, bodyOffset) when binary; bodyOffset/bodyLimit count bytes and bodyEncoding can force text or base64.`,
+		Description: `Get replay entry with full request and response content. Use after send_request timeout to retrieve results. The response body is text when UTF-8 and base64 (bodyBase64, bodyEncoding:"base64") when binary; bodyEncoding forces either.`,
 		InputSchema: schemaFor[GetReplayEntryInput](func(s *jsonschema.Schema) {
 			if p := prop(s, "bodyEncoding"); p != nil {
 				p.Enum = []any{"auto", "text", "base64"}

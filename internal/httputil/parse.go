@@ -203,28 +203,20 @@ func ParseRawWith(
 	}
 
 	if includeBody && len(bodyPart) > 0 {
-		slice := bodyPart
-		if bodyOffset > 0 {
-			if bodyOffset >= len(slice) {
-				slice = []byte{}
-			} else {
-				slice = slice[bodyOffset:]
-			}
-		}
-		if bodyLimit > 0 && len(slice) > bodyLimit {
-			slice = slice[:bodyLimit]
-			result.Truncated = true
+		start := min(max(bodyOffset, 0), len(bodyPart))
+		end := len(bodyPart)
+		if bodyLimit > 0 && end-start > bodyLimit {
+			end = start + bodyLimit
 		}
 
 		mode := encoding
 		if mode == "" {
 			mode = EncodingAuto
 		}
-		var text []byte
-		if mode != EncodingBase64 {
-			// Trim before deciding: a text body cut mid-rune is still text.
-			text = trimPartialRunes(slice)
-		}
+		// The text candidate is the same slice moved to rune boundaries, so
+		// a text body cut mid-rune is still text.
+		textStart, textEnd := runeBoundary(bodyPart, start), runeBoundary(bodyPart, end)
+		text := bodyPart[textStart:textEnd]
 		if mode == EncodingAuto {
 			if useBase64(text, contentType(headerPart)) {
 				mode = EncodingBase64
@@ -234,12 +226,16 @@ func ParseRawWith(
 		}
 
 		if mode == EncodingBase64 {
-			result.BodyBase64 = base64.StdEncoding.EncodeToString(slice)
+			result.BodyBase64 = base64.StdEncoding.EncodeToString(
+				bodyPart[start:end],
+			)
 			result.BodyEncoding = string(EncodingBase64)
-			offset := bodyOffset
+			offset := start
 			result.BodyOffset = &offset
+			result.Truncated = end < len(bodyPart)
 		} else {
 			result.Body = string(text)
+			result.Truncated = textEnd < len(bodyPart)
 		}
 	}
 
@@ -314,26 +310,29 @@ func binaryMediaType(mediaType string) bool {
 	return false
 }
 
-// trimPartialRunes drops a UTF-8 rune that bodyOffset or bodyLimit cut in
-// half. A byte cut inside a rune yields invalid UTF-8, which JSON renders as
-// U+FFFD; dropping the partial bytes keeps the returned text decodable. Bytes
-// that are invalid on their own, or invalid inside the slice rather than at
-// its edges, are left alone: only the shortest tail that makes the slice valid
-// again is dropped.
-func trimPartialRunes(body []byte) []byte {
-	if utf8.Valid(body) {
-		return body
+// runeBoundary moves a byte position that falls inside a UTF-8 rune to the
+// end of that rune, and returns every other position unchanged. Applied to
+// both ends of a text slice it gives each rune to the page it starts in: a
+// rune cut by bodyLimit is returned whole (up to three bytes past the limit)
+// and the next page, starting inside it, skips the rest. Paging a text body by
+// bodyOffset += bodyLimit therefore returns every rune exactly once.
+//
+// Only a valid rune that really straddles pos moves it. Stray continuation
+// bytes and other invalid sequences are left where they are, so binary data
+// is never shortened.
+func runeBoundary(body []byte, pos int) int {
+	if pos <= 0 || pos >= len(body) || utf8.RuneStart(body[pos]) {
+		return pos
 	}
-	for len(body) > 0 && !utf8.RuneStart(body[0]) {
-		body = body[1:]
-	}
-	if utf8.Valid(body) {
-		return body
-	}
-	for n := 1; n <= utf8.UTFMax && n <= len(body); n++ {
-		if utf8.Valid(body[:len(body)-n]) {
-			return body[:len(body)-n]
+	for i := pos - 1; i >= 0 && i > pos-utf8.UTFMax; i-- {
+		if !utf8.RuneStart(body[i]) {
+			continue
 		}
+		// An invalid sequence decodes with size 1, which never reaches pos.
+		if _, size := utf8.DecodeRune(body[i:]); i+size > pos {
+			return i + size
+		}
+		return pos
 	}
-	return body
+	return pos
 }

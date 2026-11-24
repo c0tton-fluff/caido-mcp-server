@@ -223,7 +223,7 @@ func RegisterGetRequestTool(
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "caido_get_request",
 		Title:       "Get Request",
-		Description: `Get request details. Default: metadata only (saves tokens). Use include=[requestHeaders,requestBody,responseHeaders,responseBody] for more. Body limit: 2KB default; bodyOffset/bodyLimit count bytes. Bodies come back as text when they are UTF-8 and base64 with bodyEncoding:"base64" (plus bodySize, bodyOffset) when they are not, so binary responses survive the JSON round trip; set bodyEncoding to force text or base64.`,
+		Description: `Get request details. Default: metadata only (saves tokens). Use include=[requestHeaders,requestBody,responseHeaders,responseBody] for more. Body limit: 2KB default; bodyOffset/bodyLimit count bytes, and paging by bodyOffset += bodyLimit loses nothing. UTF-8 bodies come back as text; binary bodies as base64 in bodyBase64 with bodyEncoding:"base64". Set bodyEncoding to force text or base64.`,
 		InputSchema: schemaFor[GetRequestInput](func(s *jsonschema.Schema) {
 			if p := prop(s, "bodyEncoding"); p != nil {
 				p.Enum = []any{"auto", "text", "base64"}

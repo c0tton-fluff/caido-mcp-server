@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Security
+- **`gorilla/websocket` bumped past GO-2026-6278.** v1.5.3 generated WebSocket mask keys with a weak random source; the login flow dials Caido over a WebSocket through this library. Pinned to the upstream commit that carries the fix (`v1.5.4-0.20240701034025-d67f41855da4`), since no tagged release includes it yet.
+
 ## [4.5.0] - 2026-11-16
 
 Safety modes for handing the server to an agent, WebSocket replay, and a tool list that can shrink to a quarter of its size. Scope enforcement, read-only mode and secret redaction decide what an agent is able to do instead of trusting it to behave. Works with Caido 0.57+; the WebSocket replay tools need 0.59. Verified against a live Caido 0.59.1 server. 76 MCP tools, 6 resources.

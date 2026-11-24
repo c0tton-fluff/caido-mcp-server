@@ -1,6 +1,9 @@
 package tools_test
 
 import (
+	"bytes"
+	"encoding/base64"
+	"strings"
 	"testing"
 
 	"github.com/c0tton-fluff/caido-mcp-server/v4/internal/testutil"
@@ -322,5 +325,124 @@ func TestGetRequest_BodyOffsetAndLimit(t *testing.T) {
 	// We're just verifying the parameters are passed through correctly
 	if output.Response.Body == "" {
 		t.Errorf("expected response body to be populated")
+	}
+}
+
+// TestGetRequest_BinaryBodyBase64 asserts a body that is not valid UTF-8 comes
+// back base64-encoded and round-trips to the exact bytes, which is what a PNG
+// response needs to survive the JSON layer.
+func TestGetRequest_BinaryBodyBase64(t *testing.T) {
+	body := []byte{0x89, 'P', 'N', 'G', 0x0d, 0x0a, 0x1a, 0x0a}
+	for range 4 {
+		for b := range 256 {
+			body = append(body, byte(b))
+		}
+	}
+
+	env := testutil.NewMCPTestEnv(t, func(server *mcp.Server, client *caido.Client) {
+		tools.RegisterGetRequestTool(server, client)
+	})
+	env.Mock.ValidateAgainstSchema()
+	env.Mock.On(
+		"GetRequest",
+		testutil.GetRequestFullResponse("req-png", string(body)),
+	)
+
+	result := env.CallTool(t, "caido_get_request", map[string]any{
+		"ids":       []string{"req-png"},
+		"include":   []string{"responseBody"},
+		"bodyLimit": 512,
+	})
+	if result.IsError {
+		t.Fatalf("unexpected error: %v", result.Content)
+	}
+
+	output := testutil.UnmarshalToolResult[tools.GetRequestOutput](t, result)
+	if output.Response == nil {
+		t.Fatal("expected response to be populated")
+	}
+	if output.Response.BodyEncoding != "base64" {
+		t.Fatalf(
+			"bodyEncoding = %q, want base64",
+			output.Response.BodyEncoding,
+		)
+	}
+	if output.Response.Body != "" {
+		t.Errorf("binary body leaked into body: %q", output.Response.Body)
+	}
+	if output.Response.BodySize != len(body) {
+		t.Errorf(
+			"bodySize = %d, want %d",
+			output.Response.BodySize, len(body),
+		)
+	}
+	if !output.Response.Truncated {
+		t.Error("expected truncated for a 512-byte page")
+	}
+	decoded, err := base64.StdEncoding.DecodeString(output.Response.BodyBase64)
+	if err != nil {
+		t.Fatalf("bodyBase64 does not decode: %v", err)
+	}
+	if !bytes.Equal(decoded, body[:512]) {
+		t.Fatal("base64 body does not match the first 512 body bytes")
+	}
+}
+
+// TestGetRequest_UTF8BodyUnchanged asserts a text body keeps the previous
+// shape: body present, no encoding envelope.
+func TestGetRequest_UTF8BodyUnchanged(t *testing.T) {
+	env := testutil.NewMCPTestEnv(t, func(server *mcp.Server, client *caido.Client) {
+		tools.RegisterGetRequestTool(server, client)
+	})
+	env.Mock.ValidateAgainstSchema()
+	env.Mock.On(
+		"GetRequest",
+		testutil.GetRequestFullResponse("req-text", `{"user":"josé"}`),
+	)
+
+	result := env.CallTool(t, "caido_get_request", map[string]any{
+		"ids":     []string{"req-text"},
+		"include": []string{"responseBody"},
+	})
+	if result.IsError {
+		t.Fatalf("unexpected error: %v", result.Content)
+	}
+
+	output := testutil.UnmarshalToolResult[tools.GetRequestOutput](t, result)
+	if output.Response == nil {
+		t.Fatal("expected response to be populated")
+	}
+	if output.Response.Body != `{"user":"josé"}` {
+		t.Errorf("body = %q", output.Response.Body)
+	}
+	if output.Response.BodyBase64 != "" || output.Response.BodyEncoding != "" {
+		t.Errorf("text body grew an envelope: %+v", output.Response)
+	}
+	if output.Response.BodyOffset != nil {
+		t.Errorf("text body carries bodyOffset: %v", *output.Response.BodyOffset)
+	}
+}
+
+// TestGetRequest_RejectsUnknownBodyEncoding asserts a bad bodyEncoding fails
+// before the API is called.
+func TestGetRequest_RejectsUnknownBodyEncoding(t *testing.T) {
+	env := testutil.NewMCPTestEnv(t, func(server *mcp.Server, client *caido.Client) {
+		tools.RegisterGetRequestTool(server, client)
+	})
+
+	result := env.CallTool(t, "caido_get_request", map[string]any{
+		"ids":          []string{"req-1"},
+		"include":      []string{"responseBody"},
+		"bodyEncoding": "hex",
+	})
+	if !result.IsError {
+		t.Fatal("expected error for unknown bodyEncoding")
+	}
+	text, ok := result.Content[0].(*mcp.TextContent)
+	if !ok {
+		t.Fatalf("expected TextContent, got %T", result.Content[0])
+	}
+	if !strings.Contains(text.Text, "bodyEncoding") {
+		t.Errorf("error does not name bodyEncoding: %s", text.Text)
 	}
 }

@@ -74,6 +74,8 @@ func TestSchemaEnumsAdvertised(t *testing.T) {
 		{"caido_create_tamper_rule", "section", sections},
 		{"caido_update_tamper_rule", "section", sections},
 		{"caido_test_tamper_rule", "section", sections},
+		{"caido_get_request", "bodyEncoding", []string{"auto", "text", "base64"}},
+		{"caido_get_replay_entry", "bodyEncoding", []string{"auto", "text", "base64"}},
 	}
 	for _, c := range cases {
 		schema := advertisedSchema(t, c.tool)

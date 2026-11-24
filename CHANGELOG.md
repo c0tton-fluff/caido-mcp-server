@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- **Binary bodies survive `caido_get_request` and `caido_get_replay_entry`.** Bodies that are not valid UTF-8 came back as a string where every invalid sequence had been replaced with U+FFFD, so an 8,008-byte PNG was unusable. They now return base64 in `bodyBase64` with `bodyEncoding: "base64"`, the full byte `bodySize` and the slice's `bodyOffset`. A new `bodyEncoding` parameter (`auto` default, `text`, `base64`) forces the representation; `text` output is identical to previous releases for UTF-8 bodies. `bodyOffset`/`bodyLimit` count bytes, and text slices keep whole characters: one cut by `bodyLimit` is returned complete with the page it starts in (up to three bytes over the limit), so paging by `bodyOffset += bodyLimit` returns every character exactly once.
+
 ### Fixed
 - **`caido_list_ws_streams` returned short pages on projects that mix WebSocket and SSE streams.** Caido 0.57 removed the `protocol` query argument, so the tool filtered a single upstream page client-side: a page of 20 streams holding one WebSocket returned one row with `hasMore:true`, and an agent had to page many times to collect a screenful. It now reads upstream pages of 100 until the requested count is met (at most 20 pages per call), keeps `nextCursor` on the last consumed edge so a truncated page resumes exactly there, and returns as soon as the response is full.
 

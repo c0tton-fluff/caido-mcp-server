@@ -28,8 +28,8 @@ func wsStreamEdge(id, protocol, cursor string) map[string]any {
 }
 
 // TestListWsStreamsPaginatesAcrossMixedPages covers the client-side protocol
-// filter: a page holding mostly HTTP traffic must not end the listing before
-// the requested number of WebSocket streams is reached.
+// filter: a page that mixes SSE and WebSocket streams must not end the listing
+// before the requested number of WebSocket streams is reached.
 func TestListWsStreamsPaginatesAcrossMixedPages(t *testing.T) {
 	page := func(edges []map[string]any, hasNext bool, endCursor any) map[string]any {
 		return map[string]any{
@@ -46,9 +46,9 @@ func TestListWsStreamsPaginatesAcrossMixedPages(t *testing.T) {
 	env := testutil.NewMCPTestEnv(t, func(s *mcp.Server, c *caido.Client) {
 		tools.RegisterListWsStreamsTool(s, c)
 	})
-	// Page 1: one HTTP stream, one WS stream.
+	// Page 1: one SSE stream, one WS stream.
 	env.Mock.On("ListStreams", page([]map[string]any{
-		wsStreamEdge("s-http", "HTTP", "c1"),
+		wsStreamEdge("s-sse", "SSE", "c1"),
 		wsStreamEdge("s-ws1", "WS", "c2"),
 	}, true, "c2"))
 	// Page 2: two WS streams, no further pages.
@@ -99,5 +99,64 @@ func TestListWsStreamsStopsAtLimit(t *testing.T) {
 	}
 	if !out.HasMore || out.NextCursor != "c1" {
 		t.Fatalf("hasMore/nextCursor = %v/%q, want true/c1", out.HasMore, out.NextCursor)
+	}
+}
+
+// TestListWsStreamsStopsReadingWhenFull covers the cost of a full response:
+// once limit streams are collected the handler must return, not read further
+// pages to learn whether another WebSocket stream exists.
+func TestListWsStreamsStopsReadingWhenFull(t *testing.T) {
+	env := testutil.NewMCPTestEnv(t, func(s *mcp.Server, c *caido.Client) {
+		tools.RegisterListWsStreamsTool(s, c)
+	})
+	page := func(id, protocol, cursor string) map[string]any {
+		return map[string]any{
+			"streams": map[string]any{
+				"edges": []map[string]any{wsStreamEdge(id, protocol, cursor)},
+				"pageInfo": map[string]any{
+					"hasNextPage": true, "endCursor": cursor,
+				},
+			},
+		}
+	}
+	env.Mock.On("ListStreams", page("s-ws1", "WS", "p1"))
+	// Every later page is SSE only. Reaching one means the handler kept
+	// reading after it was full.
+	env.Mock.On("ListStreams", page("s-sse", "SSE", "p2"))
+
+	result := env.CallTool(t, "caido_list_ws_streams", map[string]any{"limit": 1})
+	if result.IsError {
+		t.Fatalf("unexpected error: %v", result.Content)
+	}
+	out := testutil.UnmarshalToolResult[tools.ListWsStreamsOutput](t, result)
+	if len(out.Streams) != 1 || out.Streams[0].ID != "s-ws1" {
+		t.Fatalf("streams = %+v", out.Streams)
+	}
+	if !out.HasMore || out.NextCursor != "p1" {
+		t.Fatalf("hasMore/nextCursor = %v/%q, want true/p1", out.HasMore, out.NextCursor)
+	}
+	if after, sent := env.Mock.LastVariables("ListStreams")["after"]; sent && after != nil {
+		t.Errorf("read a second page (after=%v) with the response already full", after)
+	}
+}
+
+// TestListWsStreamsPageSizeIgnoresLimit covers the scan budget: the upstream
+// page size must not shrink with limit, or limit 1 scans 20 streams in all.
+func TestListWsStreamsPageSizeIgnoresLimit(t *testing.T) {
+	env := testutil.NewMCPTestEnv(t, func(s *mcp.Server, c *caido.Client) {
+		tools.RegisterListWsStreamsTool(s, c)
+	})
+	env.Mock.On("ListStreams", map[string]any{
+		"streams": map[string]any{
+			"edges":    []map[string]any{wsStreamEdge("s-ws1", "WS", "c1")},
+			"pageInfo": map[string]any{"hasNextPage": false, "endCursor": nil},
+		},
+	})
+	result := env.CallTool(t, "caido_list_ws_streams", map[string]any{"limit": 1})
+	if result.IsError {
+		t.Fatalf("unexpected error: %v", result.Content)
+	}
+	if first := env.Mock.LastVariables("ListStreams")["first"]; first != float64(100) {
+		t.Errorf("upstream first = %v, want 100", first)
 	}
 }

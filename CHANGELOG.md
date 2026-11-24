@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Fixed
-- **`caido_list_ws_streams` dropped WebSocket streams on mixed pages.** Caido 0.57 removed the `protocol` query argument, so the tool filtered a single page client-side: a page of 20 mostly-HTTP streams that held one WebSocket returned one row and `hasMore:false`, hiding the rest. It now pages until the requested count is met (bounded to 20 upstream pages), keeps `nextCursor` on the last consumed edge so a truncated page resumes exactly there, and reports `hasMore` when the budget runs out.
+- **`caido_list_ws_streams` returned short pages on projects that mix WebSocket and SSE streams.** Caido 0.57 removed the `protocol` query argument, so the tool filtered a single upstream page client-side: a page of 20 streams holding one WebSocket returned one row with `hasMore:true`, and an agent had to page many times to collect a screenful. It now reads upstream pages of 100 until the requested count is met (at most 20 pages per call), keeps `nextCursor` on the last consumed edge so a truncated page resumes exactly there, and returns as soon as the response is full.
 
 ## [4.5.0] - 2026-11-16
 

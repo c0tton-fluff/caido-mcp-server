@@ -39,10 +39,16 @@ type ListWsStreamsOutput struct {
 	NextCursor string            `json:"nextCursor,omitempty"`
 }
 
-// maxWsStreamPages bounds how many upstream pages one call reads while it
-// looks for WebSocket streams, so a project holding almost nothing but HTTP
-// traffic cannot turn one tool call into an unbounded scan.
-const maxWsStreamPages = 20
+const (
+	// maxWsStreamPages bounds how many upstream pages one call reads while
+	// it looks for WebSocket streams, so a project holding almost nothing
+	// but SSE streams cannot turn one tool call into an unbounded scan.
+	maxWsStreamPages = 20
+	// wsStreamPageSize is the upstream page size. It does not follow limit:
+	// with limit 1 a page of one stream would spend the whole page budget on
+	// 20 streams.
+	wsStreamPageSize = 100
+)
 
 func listWsStreamsHandler(
 	client *caido.Client,
@@ -55,9 +61,9 @@ func listWsStreamsHandler(
 		limit := clampLimit(input.Limit, 20, 100)
 
 		// Caido 0.57 removed the protocol query argument, so WebSocket
-		// streams are filtered client-side. Filtering a single page is not
-		// enough: a page of mixed streams can hold one WebSocket and stop
-		// early, so pages are read until the requested count is met.
+		// streams are filtered client-side. Filtering a single page returns
+		// short pages on a project that mixes WebSocket and SSE streams, so
+		// pages are read until the requested count is met.
 		if input.ScopeID != "" {
 			if err := requireScope(ctx, client, input.ScopeID); err != nil {
 				return nil, ListWsStreamsOutput{}, err
@@ -74,8 +80,9 @@ func listWsStreamsHandler(
 			return nil, output, nil
 		}
 
+		pageSize := wsStreamPageSize
 		for range maxWsStreamPages {
-			opts := &caido.ListStreamsOptions{First: &limit}
+			opts := &caido.ListStreamsOptions{First: &pageSize}
 			if after != "" {
 				opts.After = &after
 			}
@@ -124,6 +131,14 @@ func listWsStreamsHandler(
 			}
 			after = *resp.Streams.PageInfo.EndCursor
 			lastCursor = after
+			if len(output.Streams) == limit {
+				// Full, and upstream has more streams. Whether any of them
+				// is a WebSocket is the next call's question: reading on
+				// here could cost the whole page budget to answer it.
+				output.HasMore = true
+				output.NextCursor = lastCursor
+				return finish()
+			}
 		}
 		// Page budget spent and the response is still short: hand back a
 		// cursor so the caller can continue instead of losing streams.
@@ -165,9 +180,7 @@ func RegisterListWsStreamsTool(server *mcp.Server, client *caido.Client) {
 		Title: "List WebSocket Streams",
 		Description: `List WebSocket streams (connections) from the WebSocket tab. ` +
 			`Returns id/host/port/path/direction/source, plus replaySessionId for streams opened from a WS replay session. ` +
-			`Use the stream id with caido_list_ws_messages to read frames, and ` +
-			`caido_create_replay_session with a captured handshake request to replay one. ` +
-			`Pages through mixed traffic so the requested number of WebSocket streams is met. ` +
+			`Use the stream id with caido_list_ws_messages to read frames. ` +
 			`Params: limit (default 20, max 100), after (cursor), scope_id (optional).`,
 		Annotations: readOnlyAnn(),
 	}, listWsStreamsHandler(client))

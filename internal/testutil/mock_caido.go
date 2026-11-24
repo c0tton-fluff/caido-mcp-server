@@ -11,6 +11,7 @@ type MockHandler struct {
 	mu            sync.Mutex
 	responses     map[string][]json.RawMessage
 	lastVariables map[string]map[string]any
+	calls         map[string]int
 	hang          map[string]bool
 	validate      bool
 }
@@ -19,6 +20,7 @@ func NewMockHandler() *MockHandler {
 	return &MockHandler{
 		responses:     make(map[string][]json.RawMessage),
 		lastVariables: make(map[string]map[string]any),
+		calls:         make(map[string]int),
 		hang:          make(map[string]bool),
 	}
 }
@@ -85,6 +87,7 @@ func (m *MockHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	m.mu.Lock()
 	m.lastVariables[req.OperationName] = req.Variables
+	m.calls[req.OperationName]++
 	hang := m.hang[req.OperationName]
 	m.mu.Unlock()
 	if hang {
@@ -128,4 +131,13 @@ func (m *MockHandler) LastVariables(op string) map[string]any {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.lastVariables[op]
+}
+
+// Calls returns how many requests the mock has received for the given
+// operation name. Use it to assert a handler did not fan out into more
+// upstream calls than intended.
+func (m *MockHandler) Calls(op string) int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.calls[op]
 }

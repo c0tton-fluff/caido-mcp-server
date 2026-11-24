@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 
 	gql "github.com/Khan/genqlient/graphql"
 	caido "github.com/caido-community/sdk-go"
@@ -11,11 +12,13 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// sitemapRootQuery lists root domains. The nested request count is behind
-// @include: Caido has no per-entry count field on the connection, only a
-// requests connection on each entry, so asking for it costs one count per
-// entry (2.9 s for a 6,971 entry subtree against 0.7 s without), and most tree
-// walks do not need it.
+// sitemapRootQuery lists root domains. A root entry is one host on one port
+// and scheme, so the same label can appear many times (a local test server on
+// thousands of ephemeral ports); metadata tells them apart. The nested
+// request count is behind @include: Caido has no per-entry count field on the
+// connection, only a requests connection on each entry, so asking for it
+// costs one count per entry (2.9 s for a 6,971 entry subtree against 0.7 s
+// without), and most tree walks do not need it.
 const sitemapRootQuery = `query SitemapRootEntries($scopeId: ID, $counts: Boolean!) {
 	sitemapRootEntries(scopeId: $scopeId) {
 		count { value }
@@ -26,6 +29,7 @@ const sitemapRootQuery = `query SitemapRootEntries($scopeId: ID, $counts: Boolea
 				kind
 				parentId
 				hasDescendants
+				metadata { ... on SitemapEntryMetadataDomain { isTls port } }
 				requests @include(if: $counts) { count { value } }
 			}
 		}
@@ -75,6 +79,11 @@ type sitemapNode struct {
 	Kind           string  `json:"kind"`
 	ParentID       *string `json:"parentId"`
 	HasDescendants bool    `json:"hasDescendants"`
+	// Metadata is selected for root entries only.
+	Metadata *struct {
+		IsTLS bool `json:"isTls"`
+		Port  int  `json:"port"`
+	} `json:"metadata"`
 	// Requests is absent unless the query included it.
 	Requests *struct {
 		Count sitemapCount `json:"count"`
@@ -93,8 +102,9 @@ type GetSitemapInput struct {
 	ParentID string `json:"parentId,omitempty" jsonschema:"Parent entry ID to list children of (omit for root domains)"`
 	Depth    string `json:"depth,omitempty" jsonschema:"With parentId: direct (default) or all descendants"`
 	Limit    int    `json:"limit,omitempty" jsonschema:"Max entries to return (default 0 = every entry Caido returns); Caido has no cursor for this connection, so this truncates locally"`
-	// IncludeRequestCounts adds each entry's own captured-request count.
-	IncludeRequestCounts bool `json:"includeRequestCounts,omitempty" jsonschema:"Add each entry's captured-request count; it costs one nested count per entry, seconds on a large depth all tree"`
+	// IncludeRequestCounts adds each entry's own captured-request count,
+	// and on root domains the count from the request history.
+	IncludeRequestCounts bool `json:"includeRequestCounts,omitempty" jsonschema:"Add requestCount per entry, and capturedRequests on root domains. Costs one count per entry: use limit on a large tree"`
 }
 
 // SitemapEntrySummary is a summary of a sitemap entry
@@ -106,14 +116,18 @@ type SitemapEntrySummary struct {
 	RequestID      *string `json:"requestId,omitempty"`
 	Method         *string `json:"method,omitempty"`
 	StatusCode     *int    `json:"statusCode,omitempty"`
+	// Port and IsTLS identify a root DOMAIN entry together with its label.
+	Port  *int `json:"port,omitempty"`
+	IsTLS bool `json:"isTls,omitempty"`
 	// RequestCount is the number of captured requests attached to this
 	// entry, set only with includeRequestCounts. Entries overlap (a request
 	// appears under its directory, its path and its query), so these
 	// counts do not add up to a host total.
 	RequestCount *int `json:"requestCount,omitempty"`
-	// CapturedRequests is the exact number of captured requests whose host
-	// is this root entry's label, from the request history rather than the
-	// sitemap tree. Set on root DOMAIN entries only.
+	// CapturedRequests is the number of captured requests for this root
+	// entry's host, port and scheme, counted in the request history rather
+	// than the sitemap tree. Set on root DOMAIN entries with
+	// includeRequestCounts only: it costs one history count per entry.
 	CapturedRequests *int `json:"capturedRequests,omitempty"`
 }
 
@@ -188,23 +202,17 @@ func getSitemapHandler(
 			)
 		}
 
-		if input.ParentID == "" {
-			for i := range output.Entries {
-				entry := &output.Entries[i]
-				if entry.Kind != "DOMAIN" {
-					continue
-				}
-				total, err := hostRequestTotal(ctx, client, entry.Label)
-				if err != nil {
-					return nil, GetSitemapOutput{}, err
-				}
-				entry.CapturedRequests = &total
-			}
-		}
-
 		if input.Limit > 0 && len(output.Entries) > input.Limit {
 			output.Entries = output.Entries[:input.Limit]
 			output.Truncated = true
+		}
+
+		// History counts come after the limit, and only on request: one
+		// count per root entry took 103 s on a project with 6,819 of them.
+		if input.ParentID == "" && input.IncludeRequestCounts {
+			if err := addCapturedRequests(ctx, client, output.Entries); err != nil {
+				return nil, GetSitemapOutput{}, err
+			}
 		}
 
 		return nil, output, nil
@@ -241,6 +249,11 @@ func summarizeSitemapNode(node sitemapNode) SitemapEntrySummary {
 		Kind:           node.Kind,
 		HasDescendants: node.HasDescendants,
 	}
+	if node.Metadata != nil {
+		port := node.Metadata.Port
+		summary.Port = &port
+		summary.IsTLS = node.Metadata.IsTLS
+	}
 	if node.Requests != nil {
 		count := node.Requests.Count.Value
 		summary.RequestCount = &count
@@ -258,27 +271,93 @@ func summarizeSitemapNode(node sitemapNode) SitemapEntrySummary {
 	return summary
 }
 
-// hostRequestTotal counts captured requests whose host is host. The sitemap
-// tree cannot answer this: one request is listed under its directory, its
-// path and its query, so summing entry counts overcounts, and a host entry's
-// own requests connection covers only part of its traffic (6,718 of 7,875 on
-// the corpus this was measured against).
-func hostRequestTotal(
-	ctx context.Context, client *caido.Client, host string,
-) (int, error) {
-	if strings.ContainsAny(host, `"\`) {
-		return 0, fmt.Errorf(
-			"cannot count requests for sitemap label %q", host,
+// sitemapCountConcurrency bounds parallel history counts for one listing.
+const sitemapCountConcurrency = 8
+
+// addCapturedRequests fills CapturedRequests on root DOMAIN entries. The
+// sitemap tree cannot answer this: one request is listed under its
+// directory, its path and its query, so summing entry counts overcounts, and
+// a host entry's own requests connection covers only part of its traffic
+// (6,718 of 7,875 on the corpus this was measured against).
+//
+// A count that fails leaves that entry without the field rather than failing
+// a listing of thousands of entries; the error is returned only when no count
+// succeeded, which means the counts are not available at all.
+func addCapturedRequests(
+	ctx context.Context, client *caido.Client, entries []SitemapEntrySummary,
+) error {
+	var (
+		wg       sync.WaitGroup
+		mu       sync.Mutex
+		firstErr error
+		counted  int
+	)
+	sem := make(chan struct{}, sitemapCountConcurrency)
+	for i := range entries {
+		entry := &entries[i]
+		if entry.Kind != "DOMAIN" {
+			continue
+		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			total, err := rootRequestTotal(ctx, client, *entry)
+			mu.Lock()
+			defer mu.Unlock()
+			if err != nil {
+				if firstErr == nil {
+					firstErr = err
+				}
+				return
+			}
+			entry.CapturedRequests = &total
+			counted++
+		}()
+	}
+	wg.Wait()
+	if counted == 0 {
+		return firstErr
+	}
+	return nil
+}
+
+// rootRequestFilter is the HTTPQL filter selecting one root entry's
+// requests. Host alone is not enough: the same host on another port or
+// scheme is a different root entry.
+func rootRequestFilter(entry SitemapEntrySummary) (string, error) {
+	if strings.ContainsAny(entry.Label, `"\`) {
+		return "", fmt.Errorf(
+			"cannot count requests for sitemap label %q", entry.Label,
 		)
 	}
+	filter := fmt.Sprintf(`req.host.eq:"%s"`, entry.Label)
+	if entry.Port != nil {
+		filter += fmt.Sprintf(
+			" and req.port.eq:%d and req.tls.eq:%t", *entry.Port, entry.IsTLS,
+		)
+	}
+	return filter, nil
+}
+
+// rootRequestTotal counts the captured requests of one root entry.
+func rootRequestTotal(
+	ctx context.Context, client *caido.Client, entry SitemapEntrySummary,
+) (int, error) {
+	filter, err := rootRequestFilter(entry)
+	if err != nil {
+		return 0, err
+	}
 	one := 1
-	filter := fmt.Sprintf(`req.host.eq:"%s"`, host)
 	resp, err := client.Requests.List(ctx, &caido.ListRequestsOptions{
 		First:  &one,
 		Filter: &filter,
 	})
 	if err != nil {
-		return 0, fmt.Errorf("count requests for host %s: %w", host, err)
+		return 0, fmt.Errorf(
+			"count requests for host %s: %w", entry.Label, err,
+		)
 	}
 	return resp.Requests.Count.Value, nil
 }
@@ -290,7 +369,7 @@ func RegisterGetSitemapTool(
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "caido_get_sitemap",
 		Title:       "Get Sitemap",
-		Description: `Browse the sitemap tree. No params: root domains, each with capturedRequests, the exact count of captured requests for that host. parentId: its children, depth:"all" for the whole subtree. Rows carry id/label/kind/hasDescendants, plus requestId/method/statusCode for request entries. includeRequestCounts adds each entry's own request count (slow on a large depth:"all" tree); limit truncates locally because Caido exposes no cursor here.`,
+		Description: `Browse the sitemap tree. No params: root domains (one per host, port and scheme). parentId: its children, depth:"all" for the whole subtree. Rows carry id/label/kind/hasDescendants, plus requestId/method/statusCode for request entries. limit truncates locally (Caido has no cursor here). includeRequestCounts adds requestCount per entry and capturedRequests per root domain; it costs one count per entry, so pair it with limit.`,
 		InputSchema: schemaFor[GetSitemapInput](func(s *jsonschema.Schema) {
 			if p := prop(s, "depth"); p != nil {
 				p.Enum = []any{"direct", "all"}

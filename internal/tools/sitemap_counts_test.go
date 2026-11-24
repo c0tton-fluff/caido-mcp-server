@@ -246,7 +246,8 @@ func requestCountResponse(count int) map[string]any {
 // TestGetSitemapRootCountsAreOptInAndBounded covers the cost of the history
 // count on root domains: none without includeRequestCounts, and with it one
 // per returned entry, after limit. Counting every root before truncating
-// made the default listing take 103 s on a project with 6,819 roots.
+// made the default listing take minutes on a project with thousands of
+// roots, whatever the limit.
 func TestGetSitemapRootCountsAreOptInAndBounded(t *testing.T) {
 	newEnv := func(t *testing.T) *testutil.MCPTestEnv {
 		env := testutil.NewMCPTestEnv(t, func(s *mcp.Server, c *caido.Client) {

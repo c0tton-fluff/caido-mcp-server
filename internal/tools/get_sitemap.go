@@ -208,7 +208,8 @@ func getSitemapHandler(
 		}
 
 		// History counts come after the limit, and only on request: one
-		// count per root entry took 103 s on a project with 6,819 of them.
+		// count per root entry turns a sub-second listing into minutes on
+		// a project with thousands of roots.
 		if input.ParentID == "" && input.IncludeRequestCounts {
 			if err := addCapturedRequests(ctx, client, output.Entries); err != nil {
 				return nil, GetSitemapOutput{}, err

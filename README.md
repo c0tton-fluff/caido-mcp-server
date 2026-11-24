@@ -127,17 +127,17 @@ The startup banner reports the mode and the reduced tool count. A `CAIDO_MCP_REA
 
 ### Toolsets
 
-Every MCP client loads the full tool list into the model's context at the start of a session. With all 76 tools that list is about 92 KB. Two options shrink it:
+Every MCP client loads the full tool list into the model's context at the start of a session. With all 76 tools that list is about 96 KB. Two options shrink it:
 
 - `--toolsets` (or `CAIDO_MCP_TOOLSETS`) registers only the toolsets you name, comma separated.
 - `--compact` (or `CAIDO_MCP_COMPACT=1`) leaves the output schemas out of the list. Results still carry structured content.
 
 | Configuration | Tools | Tool list |
 |---------------|-------|-----------|
-| default | 76 | 92.0 KB |
-| `--compact` | 76 | 62.0 KB |
-| `--toolsets core` | 31 | 39.4 KB |
-| `--toolsets core --compact` | 31 | 23.3 KB |
+| default | 76 | 96.4 KB |
+| `--compact` | 76 | 64.9 KB |
+| `--toolsets core` | 31 | 43.8 KB |
+| `--toolsets core --compact` | 31 | 26.1 KB |
 
 | Toolset | Tools |
 |---------|-------|
@@ -302,8 +302,8 @@ you use it, so upgrading does not require a fresh login.
 
 | Tool | Description |
 |------|-------------|
-| `caido_list_requests` | List requests with HTTPQL filter, scope, ordering and pagination; returns the filter's total count |
-| `caido_get_request` | Get request details (metadata, headers, body). 2KB body limit default |
+| `caido_list_requests` | List requests with HTTPQL filter, scope, ordering and pagination; returns the filter's total count. `snippet` shows regex hits in bodies and headers without returning them |
+| `caido_get_request` | Get request details (metadata, headers, body). 2KB body limit default; binary bodies come back as base64 |
 | `caido_diff_responses` | Structural diff of two responses by Caido request ID: status/size change flags and a compact body/header summary (never dumps full bodies) |
 | `caido_send_request` | Send HTTP request via Replay, returns response inline. Polls up to 10s. Auto-injects session cookies and persists `Set-Cookie` (toggle with `useCookieJar`) |
 | `caido_batch_send` | Send multiple requests in parallel (BAC sweeps, parameter fuzzing, endpoint sweeps). Max 50 per batch |
@@ -314,7 +314,7 @@ you use it, so upgrading does not require a fresh login.
 | `caido_delete_replay_sessions` | Bulk delete replay sessions by ID |
 | `caido_move_replay_session` | Move a session to a different collection |
 | `caido_rename_replay_session` | Rename a replay session (tab title) |
-| `caido_get_replay_entry` | Get replay entry with response. 2KB body limit default |
+| `caido_get_replay_entry` | Get replay entry with response. 2KB body limit default; binary bodies come back as base64 |
 | `caido_clear_session_cookies` | Wipe the in-memory cookie jar for a replay session |
 | `caido_get_session_cookies` | List metadata for cookies stored in a session jar matching a URL (values not returned) |
 | `caido_list_replay_collections` | List replay session collections |
@@ -329,7 +329,7 @@ you use it, so upgrading does not require a fresh login.
 | `caido_create_finding` | Create finding linked to a request |
 | `caido_delete_findings` | Delete findings by IDs or reporter name |
 | `caido_export_findings` | Export findings for reporting |
-| `caido_get_sitemap` | Browse sitemap hierarchy |
+| `caido_get_sitemap` | Browse the sitemap tree: root domains, children, or a whole subtree, with optional request counts |
 | `caido_list_scopes` | List target scopes |
 | `caido_is_in_scope` | Check whether a host or URL is in the project scope; returns the matching scope and the allow/deny rule that decided it |
 | `caido_create_scope` | Create new scope with allow/deny lists |
@@ -405,8 +405,12 @@ Read-only data exposed via the MCP resources protocol. Agents can read these wit
 | `orderBy` | string | Sort field: `id`, `createdAt`, `host`, `method`, `path`, `query`, `fileExtension`, `source`, `statusCode`, `roundtripTime`, `responseLength`. Omit for Caido's default order |
 | `order` | string | `asc` or `desc` (default `desc` when `orderBy` is set; `desc` without `orderBy` sorts by id, i.e. newest first) |
 | `scopeId` | string | Only requests inside this scope (ID from `caido_list_scopes`); `totalCount` then counts in-scope matches |
+| `snippet` | object | Regex scan over the returned rows: `{regex, context, maxPerRequest, parts}`. `parts` is any of `responseBody` (default), `requestBody`, `responseHeaders`, `requestHeaders` |
+| `fields` | string[] | Extra per-row fields: `createdAt`, `host`, `path`, `query`, `source`, `responseLength`, `roundtripTime` |
 
 `totalCount` in the response is every request matching `httpql`, not just the rows on the page, so `{"httpql": "...", "limit": 1}` counts matches in one call. The newest N is `{"limit": N, "order": "desc"}`. `nextCursor` keeps the requested order, so `after` pages contiguously.
+
+`snippet` finds a value without pulling bodies into the model's context: each returned row gets up to 3 `matches` (max 10), each with its part, byte offset and an excerpt (40 bytes each side by default, max 200). `httpql` still selects the rows; the scan only annotates them, searching up to 1 MiB per part. Header parts are searched after credential redaction, so a snippet cannot return an `Authorization`, `Cookie` or `Set-Cookie` value. Rows that did not come from the proxy always carry `source` (`REPLAY`, `AUTOMATE`, `WORKFLOW`, `PLUGIN`, `IMPORT`).
 
 #### caido_get_request
 
@@ -416,6 +420,20 @@ Read-only data exposed via the MCP resources protocol. Agents can read these wit
 | `include` | string[] | `requestHeaders`, `requestBody`, `responseHeaders`, `responseBody` |
 | `bodyOffset` | int | Byte offset |
 | `bodyLimit` | int | Byte limit (default 2000) |
+| `bodyEncoding` | string | `auto` (default), `text` or `base64` |
+
+With `auto`, a UTF-8 body comes back as text in `body` and anything else as base64 in `bodyBase64` with `bodyEncoding: "base64"`, the full `bodySize` and the slice's `bodyOffset`, so images, protobuf and compressed bodies can be rebuilt byte for byte. `bodyOffset` and `bodyLimit` count bytes. A character cut by `bodyLimit` is returned whole with the page it starts in, so paging with `bodyOffset += bodyLimit` loses nothing.
+
+#### caido_get_sitemap
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `parentId` | string | Entry to list children of. Omit for root domains |
+| `depth` | string | With `parentId`: `direct` (default) or `all` for the whole subtree |
+| `limit` | int | Max entries to return. Caido has no cursor here, so this truncates locally and sets `truncated`; `totalEntries` is the full count |
+| `includeRequestCounts` | bool | Add `requestCount` per entry and, on root domains, `capturedRequests` |
+
+A root domain is one host on one port and scheme, so rows carry `port` and `isTls` and the same label can appear more than once. `capturedRequests` is the number of captured requests for that host, port and scheme. Counts cost one lookup per entry, so pair `includeRequestCounts` with `limit` on a large project.
 
 #### caido_send_request
 
@@ -486,6 +504,7 @@ Drive a WebSocket (e.g. a graphql-ws subscription) through Caido: the socket is 
 | `id` | string | Replay entry ID (required) |
 | `bodyOffset` | int | Byte offset |
 | `bodyLimit` | int | Byte limit (default 2000) |
+| `bodyEncoding` | string | `auto` (default), `text` or `base64`, as for `caido_get_request` |
 
 #### caido_get_automate_entry
 
